@@ -18,6 +18,22 @@ interface AircraftData {
   dbFlags?: number;
 }
 
+interface VesselData {
+  mmsi: string;
+  name: string;
+  type: string;
+  category: string;
+  lat: number;
+  lon: number;
+  speed: number;
+  course: number;
+  heading: number;
+  flag: string;
+  destination?: string;
+  length?: number;
+  status: string;
+}
+
 const GULF_BOUNDS = { latMin: -90, latMax: 90, lngMin: -180, lngMax: 180 };
 
 const getAircraftColor = (type?: string): string => {
@@ -74,6 +90,44 @@ const buildAircraftTooltip = (ac: AircraftData) => {
   return html;
 };
 
+const getVesselColor = (category: string): string => {
+  switch (category) {
+    case "TANKER": return "#ff9500";
+    case "CARGO": return "#00bfff";
+    case "NAVAL": return "#ff4466";
+    default: return "#aaaaaa";
+  }
+};
+
+const createVesselIcon = (v: VesselData): L.DivIcon => {
+  const color = getVesselColor(v.category);
+  const rotation = v.course ?? 0;
+  const html = `
+    <div style="position:relative;width:20px;height:20px;cursor:pointer;">
+      <svg viewBox="0 0 24 24" width="20" height="20" style="transform:rotate(${rotation}deg);filter:drop-shadow(0 0 3px ${color}80);">
+        <path d="M12 2 L16 10 L16 20 L12 22 L8 20 L8 10 Z" fill="${color}" fill-opacity="0.85" stroke="${color}" stroke-width="0.5"/>
+        <line x1="8" y1="14" x2="16" y2="14" stroke="${color}" stroke-width="0.8" opacity="0.5"/>
+      </svg>
+      <span style="position:absolute;left:22px;top:2px;font-family:'JetBrains Mono',monospace;font-size:7px;color:${color};white-space:nowrap;text-shadow:0 0 4px rgba(0,0,0,0.9);opacity:0.8;">${v.name}</span>
+    </div>
+  `;
+  return L.divIcon({ html, className: "", iconSize: [20, 20], iconAnchor: [10, 10] });
+};
+
+const buildVesselTooltip = (v: VesselData) => {
+  const color = getVesselColor(v.category);
+  let html = `<div style="font-family:'JetBrains Mono',monospace;font-size:10px;line-height:1.4">`;
+  html += `<div style="color:${color};font-weight:600">⚓ ${v.name}</div>`;
+  html += `<div style="color:#666;font-size:8px">${v.type}</div>`;
+  html += `<div style="color:#999">FLAG: ${v.flag}</div>`;
+  html += `<div style="color:#999">SPD: ${v.speed} kts | CRS: ${Math.round(v.course)}°</div>`;
+  if (v.destination) html += `<div style="color:#999">DEST: ${v.destination}</div>`;
+  if (v.length) html += `<div style="color:#999">LOA: ${v.length}m</div>`;
+  html += `<div style="color:${v.status === "Under way" ? "#44ff88" : "#ffaa00"};font-size:8px">${v.status.toUpperCase()}</div>`;
+  html += `</div>`;
+  return html;
+};
+
 const buildAssetTooltip = (name: string, type: string, status: string, color: string, statusColor: string) => {
   return `<div style="font-family:'JetBrains Mono',monospace;font-size:10px;line-height:1.4">
     <div style="color:${color};font-weight:600">${name}</div>
@@ -82,11 +136,12 @@ const buildAssetTooltip = (name: string, type: string, status: string, color: st
   </div>`;
 };
 
-export type { AircraftData };
-export { getAircraftColor, getAircraftCategory };
+export type { AircraftData, VesselData };
+export { getAircraftColor, getAircraftCategory, getVesselColor };
 
 const ThreatMatrix = () => {
   const [trackCount, setTrackCount] = useState(0);
+  const [vesselCount, setVesselCount] = useState(0);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [selectedAircraft, setSelectedAircraft] = useState<AircraftData | null>(null);
   const [altHistory, setAltHistory] = useState<{ time: string; alt: number }[]>([]);
@@ -94,6 +149,7 @@ const ThreatMatrix = () => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
+  const vesselsLayerRef = useRef<L.LayerGroup | null>(null);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -110,7 +166,9 @@ const ThreatMatrix = () => {
     }).addTo(map);
 
     const markersLayer = L.layerGroup().addTo(map);
+    const vesselsLayer = L.layerGroup().addTo(map);
     markersLayerRef.current = markersLayer;
+    vesselsLayerRef.current = vesselsLayer;
     mapRef.current = map;
 
     MOCK_ASSETS.us.forEach((asset) => {
@@ -131,7 +189,7 @@ const ThreatMatrix = () => {
 
     setTimeout(() => map.invalidateSize(), 100);
 
-    return () => { map.remove(); mapRef.current = null; markersLayerRef.current = null; };
+    return () => { map.remove(); mapRef.current = null; markersLayerRef.current = null; vesselsLayerRef.current = null; };
   }, []);
 
   const handleAircraftClick = useCallback((ac: AircraftData) => {
@@ -193,11 +251,40 @@ const ThreatMatrix = () => {
     }
   }, [selectedAircraft, handleAircraftClick]);
 
+  const fetchVessels = useCallback(async () => {
+    try {
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID || "akpvedbvrzbeniyhstfu";
+      const resp = await fetch(`https://${projectId}.supabase.co/functions/v1/ais-proxy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const vessels: VesselData[] = data.vessels || [];
+
+      if (vesselsLayerRef.current) {
+        vesselsLayerRef.current.clearLayers();
+        vessels.forEach((v) => {
+          const icon = createVesselIcon(v);
+          L.marker([v.lat, v.lon], { icon })
+            .bindTooltip(buildVesselTooltip(v), { direction: "top", className: "leaflet-tooltip-tactical" })
+            .addTo(vesselsLayerRef.current!);
+        });
+      }
+
+      setVesselCount(vessels.length);
+    } catch (e) {
+      console.error("AIS fetch error:", e);
+    }
+  }, []);
+
   useEffect(() => {
     fetchAircraft();
-    const interval = setInterval(fetchAircraft, 30000);
-    return () => clearInterval(interval);
-  }, [fetchAircraft]);
+    fetchVessels();
+    const acInterval = setInterval(fetchAircraft, 30000);
+    const vesselInterval = setInterval(fetchVessels, 60000);
+    return () => { clearInterval(acInterval); clearInterval(vesselInterval); };
+  }, [fetchAircraft, fetchVessels]);
 
   return (
     <div className="panel-tactical flex flex-col h-full">
@@ -209,7 +296,7 @@ const ThreatMatrix = () => {
           </span>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-[10px] text-primary/70 font-mono">{trackCount} MIL TRACKS</span>
+          <span className="text-[10px] text-primary/70 font-mono">{trackCount} AIR | {vesselCount} SEA</span>
           <span className="text-[10px] text-muted-foreground">
             {lastUpdate ? `${lastUpdate.toLocaleTimeString("en-US", { hour12: false })}Z` : "ACQUIRING..."}
           </span>
@@ -228,7 +315,7 @@ const ThreatMatrix = () => {
         />
 
         {/* Legend */}
-        <div className="absolute bottom-2 left-2 bg-background/80 border border-panel-border rounded-sm px-2 py-1.5 flex items-center gap-3 z-[1000]">
+        <div className="absolute bottom-2 left-2 bg-background/80 border border-panel-border rounded-sm px-2 py-1.5 flex flex-wrap items-center gap-3 z-[1000]">
           <div className="flex items-center gap-1.5">
             <div className="h-2 w-2 rounded-full" style={{ background: "#00d4ff" }} />
             <span className="text-[9px] text-primary/70 font-mono">TRANSPORT</span>
@@ -245,9 +332,18 @@ const ThreatMatrix = () => {
             <div className="h-2 w-2 rounded-full" style={{ background: "#ff6644" }} />
             <span className="text-[9px] font-mono" style={{ color: "#ff6644aa" }}>FIGHTER</span>
           </div>
+          <div className="text-[9px] text-muted-foreground font-mono">|</div>
           <div className="flex items-center gap-1.5">
-            <div className="h-2 w-2 rounded-full bg-crimson" />
-            <span className="text-[9px] text-crimson/70 font-mono">HOSTILE</span>
+            <div className="h-2 w-2 rounded-full" style={{ background: "#ff9500" }} />
+            <span className="text-[9px] font-mono" style={{ color: "#ff9500aa" }}>TANKER ⚓</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="h-2 w-2 rounded-full" style={{ background: "#00bfff" }} />
+            <span className="text-[9px] font-mono" style={{ color: "#00bfffaa" }}>CARGO ⚓</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="h-2 w-2 rounded-full" style={{ background: "#ff4466" }} />
+            <span className="text-[9px] font-mono" style={{ color: "#ff4466aa" }}>NAVAL ⚓</span>
           </div>
         </div>
       </div>
