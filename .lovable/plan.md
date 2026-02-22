@@ -1,55 +1,91 @@
 
+# Echte AIS-Daten via aisstream.io integrieren
 
-# FlightRadar-Style Aircraft Visualization + Stale Data Fix
+## Datenquelle: aisstream.io (kostenlos)
 
-## Problem 1: Aircraft are tiny circles, not FlightRadar-style
-Currently aircraft appear as radius-4 circle dots. The ADS-B data already includes `track` (heading), `alt_baro`, `gs` (speed), `flight` (callsign), `t` (aircraft type like C17, B737, H60) -- but none of this is used visually.
+**aisstream.io** bietet einen kostenlosen WebSocket-Stream mit echten, weltweiten AIS-Schiffsdaten. Man braucht nur einen kostenlosen API-Key (Registrierung unter aisstream.io).
 
-## Problem 2: Stale market data in DB
-The `market_snapshots` table still contains old MicroStrategy/Trump data. The threat engine receives this stale data on its second call, producing irrelevant analysis.
+## Architektur
 
----
+Da WebSocket-Verbindungen nicht direkt aus einer Edge Function aufrechterhalten werden koennen (Edge Functions sind kurzlebig), gibt es zwei Ansaetze:
 
-## Changes
+**Gewaehlt: Hybrid-Ansatz** -- Die Edge Function `ais-proxy` wird umgebaut:
+1. Sie verbindet sich bei jedem Aufruf kurz per WebSocket zu aisstream.io
+2. Sammelt fuer 3-5 Sekunden AIS-Nachrichten aus den relevanten Regionen (Persischer Golf, Rotes Meer, Suez)
+3. Gibt die gesammelten Schiffspositionen als JSON zurueck
+4. Fallback: Wenn keine Daten kommen oder kein API-Key vorhanden, werden die bestehenden Mock-Daten zurueckgegeben
 
-### 1. FlightRadar-style aircraft markers (`src/components/dashboard/ThreatMatrix.tsx`)
+## Aenderungen
 
-Replace `L.circleMarker` with `L.divIcon` using an SVG airplane icon rotated to match the aircraft's heading direction.
+### 1. API-Key als Secret hinzufuegen
+- Der User muss sich bei aisstream.io registrieren (kostenlos)
+- API-Key wird als `AISSTREAM_API_KEY` Secret gespeichert
 
-- Use an airplane SVG shape (triangle/arrow) rotated via CSS `transform: rotate(${track}deg)`
-- Color-code by aircraft type: transport (C17, C130, C30J) = cyan, fighters = yellow, helicopters (H60, NH90) = green, unknown = white
-- Show persistent callsign label next to each aircraft icon
-- Add `track` field to AircraftData interface
-- Larger, more visible icons (20x20px vs 4px radius dots)
-- Tooltip keeps existing info (reg, type, altitude, speed) but adds heading
+### 2. Edge Function `supabase/functions/ais-proxy/index.ts` umbauen
+- WebSocket-Verbindung zu `wss://stream.aisstream.io/v0/stream`
+- Subscription-Message mit Bounding Boxes fuer relevante Gebiete:
+  - Persischer Golf / Strait of Hormuz: [[23, 47], [30, 60]]
+  - Rotes Meer / Bab el-Mandeb: [[11, 40], [30, 45]]
+  - Suez-Kanal: [[29, 32], [32, 35]]
+- AIS Position Reports (Nachrichtentyp 1, 2, 3, 18) parsen
+- Schiffe in das bestehende VesselData-Format mappen (mmsi, name, lat, lon, speed, course, etc.)
+- Timeout nach 5 Sekunden, dann Response mit allen gesammelten Schiffen
+- Fallback auf Mock-Daten wenn kein API-Key oder Fehler
 
-### 2. Clear stale market data from DB
-- The Dashboard's `loadFromDB` loads stale MicroStrategy markets on mount, which gets passed to the threat engine
-- Fix: Only use fresh API data for markets, not DB fallback. Or update the `intel-agent` function to store Iran-only markets.
-- Simpler fix in Dashboard: don't pass DB-loaded markets to ThreatEngine -- only pass fresh `marketsData` from the API call.
+### 3. Frontend `ThreatMatrix.tsx` -- minimale Aenderungen
+- Das Frontend braucht keine Aenderung, da das Datenformat gleich bleibt
+- Optional: Anzeige ob "LIVE" oder "SIMULATED" Daten
 
----
+## Technische Details
 
-## Technical Details
-
-### Aircraft Icon Implementation
+### aisstream.io WebSocket Subscription Message
 ```text
-For each aircraft marker:
-1. Create SVG airplane icon (simple triangle pointing up)
-2. Wrap in L.divIcon with inline style: transform: rotate(Xdeg)
-3. Size: 20x20px, color based on type
-4. Permanent tooltip showing callsign (e.g., "RCH578")
+{
+  "Apikey": "<KEY>",
+  "BoundingBoxes": [
+    [[23, 47], [30, 60]],    // Persian Gulf
+    [[11, 40], [30, 45]],    // Red Sea
+    [[29, 32], [32, 35]]     // Suez
+  ]
+}
 ```
 
-### Color scheme for aircraft types:
-- Transport (C17, C30J, C130, A400, KC135): cyan (#00d4ff)
-- Tanker/ISR (E3, E8, RC135, P8): amber (#ffaa00)  
-- Helicopter (H60, NH90, A139): green (#44ff88)
-- Fighter/other: white
+### AIS Message Mapping
+```text
+AIS PositionReport -> VesselData:
+  - MessageID -> (filter: only 1,2,3,18)
+  - UserID -> mmsi
+  - Latitude -> lat
+  - Longitude -> lon
+  - Sog -> speed (knots)
+  - Cog -> course
+  - TrueHeading -> heading
+  - ShipName (from MetaData) -> name
+  - ShipType -> type/category mapping
+  - Flag (from MetaData) -> flag
+  - Destination (from MetaData) -> destination
+```
 
-### Files to modify:
-| File | Change |
-|------|--------|
-| `src/components/dashboard/ThreatMatrix.tsx` | Replace circleMarker with rotated airplane divIcon, add callsign labels, color-code by type |
-| `src/components/dashboard/Dashboard.tsx` | Fix stale market data: only pass fresh API markets to ThreatEngine, not DB fallback |
+### Edge Function Ablauf
+```text
+Request kommt rein
+  -> Pruefe AISSTREAM_API_KEY Secret
+  -> Wenn vorhanden:
+      -> WebSocket oeffnen zu aisstream.io
+      -> Subscription senden mit Bounding Boxes
+      -> 4 Sekunden lang Nachrichten sammeln
+      -> Deduplizieren nach MMSI (neueste Position behalten)
+      -> Als VesselData[] zurueckgeben + source: "live"
+  -> Wenn nicht vorhanden oder Fehler:
+      -> Mock-Daten mit Drift zurueckgeben + source: "simulated"
+```
 
+### Dateien die geaendert werden
+
+| Datei | Aenderung |
+|-------|-----------|
+| `supabase/functions/ais-proxy/index.ts` | Komplett umbauen: WebSocket zu aisstream.io, Fallback auf Mock-Daten |
+| `src/components/dashboard/ThreatMatrix.tsx` | Kleiner Zusatz: "LIVE" vs "SIM" Badge im Header anzeigen |
+
+### Voraussetzung
+- User muss sich bei aisstream.io registrieren und den API-Key als Secret `AISSTREAM_API_KEY` eingeben
