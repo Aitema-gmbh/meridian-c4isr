@@ -1,5 +1,6 @@
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X } from "lucide-react";
+import { X, Camera } from "lucide-react";
 import { type AircraftData, getAircraftColor, getAircraftCategory } from "./ThreatMatrix";
 
 interface AircraftDetailPanelProps {
@@ -9,6 +10,27 @@ interface AircraftDetailPanelProps {
 }
 
 const AircraftDetailPanel = ({ aircraft, altHistory, onClose }: AircraftDetailPanelProps) => {
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoCredit, setPhotoCredit] = useState<string>("");
+  const [photoLoading, setPhotoLoading] = useState(false);
+
+  useEffect(() => {
+    if (!aircraft) { setPhotoUrl(null); return; }
+    setPhotoLoading(true);
+    setPhotoUrl(null);
+    const hex = aircraft.hex;
+    fetch(`https://api.planespotters.net/pub/photos/hex/${hex}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.photos?.length > 0) {
+          setPhotoUrl(data.photos[0].thumbnail_large?.src || data.photos[0].thumbnail?.src || null);
+          setPhotoCredit(data.photos[0].photographer || "");
+        }
+      })
+      .catch(() => {})
+      .finally(() => setPhotoLoading(false));
+  }, [aircraft?.hex]);
+
   if (!aircraft) return null;
 
   const color = getAircraftColor(aircraft.t);
@@ -37,6 +59,28 @@ const AircraftDetailPanel = ({ aircraft, altHistory, onClose }: AircraftDetailPa
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
             <X className="h-3.5 w-3.5" />
           </button>
+        </div>
+
+        {/* Aircraft Photo */}
+        <div className="border-b border-panel-border">
+          {photoLoading ? (
+            <div className="h-[100px] flex items-center justify-center bg-muted/20">
+              <Camera className="h-4 w-4 text-muted-foreground animate-pulse" />
+            </div>
+          ) : photoUrl ? (
+            <div className="relative">
+              <img src={photoUrl} alt={callsign} className="w-full h-[100px] object-cover" />
+              {photoCredit && (
+                <span className="absolute bottom-0.5 right-1 text-[7px] font-mono text-white/60 bg-black/50 px-1 rounded">
+                  © {photoCredit}
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="h-[60px] flex items-center justify-center bg-muted/10">
+              <span className="text-[8px] font-mono text-muted-foreground">NO PHOTO AVAILABLE</span>
+            </div>
+          )}
         </div>
 
         {/* Info rows */}
