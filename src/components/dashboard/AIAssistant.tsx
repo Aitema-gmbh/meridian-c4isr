@@ -1,38 +1,155 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
+import { toast } from "sonner";
 
-const MOCK_RESPONSES = [
-  { role: "user" as const, content: "What is the current threat level in the Strait of Hormuz?" },
-  {
-    role: "assistant" as const,
-    content:
-      "Based on multi-source analysis: The Strait of Hormuz threat level is ELEVATED (34% closure probability). Key indicators:\n\n• IRGCN fast patrol boat deployments up 200% vs baseline\n• RC-135V ISR sorties doubled in 12hrs (anomalous)\n• 3 VLCCs diverted from transit corridor\n• OSINT sentiment score: -0.63 (hostile)\n\nRecommendation: Maintain WATCHCON 2. Monitor IRGCN FPB movements for swarming patterns.",
-  },
-];
+type Message = { role: "user" | "assistant"; content: string };
+
+const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/intel-chat`;
 
 const AIAssistant = () => {
-  const [messages] = useState(MOCK_RESPONSES);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages]);
+
+  const send = async () => {
+    const text = input.trim();
+    if (!text || isLoading) return;
+
+    const userMsg: Message = { role: "user", content: text };
+    const allMessages = [...messages, userMsg];
+    setMessages(allMessages);
+    setInput("");
+    setIsLoading(true);
+
+    let assistantSoFar = "";
+
+    const upsertAssistant = (chunk: string) => {
+      assistantSoFar += chunk;
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.role === "assistant") {
+          return prev.map((m, i) =>
+            i === prev.length - 1 ? { ...m, content: assistantSoFar } : m
+          );
+        }
+        return [...prev, { role: "assistant", content: assistantSoFar }];
+      });
+    };
+
+    try {
+      const resp = await fetch(CHAT_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ messages: allMessages }),
+      });
+
+      if (resp.status === 429) {
+        toast.error("Rate limit exceeded. Please wait before trying again.");
+        setIsLoading(false);
+        return;
+      }
+      if (resp.status === 402) {
+        toast.error("AI credits exhausted. Add credits in Settings → Workspace → Usage.");
+        setIsLoading(false);
+        return;
+      }
+      if (!resp.ok || !resp.body) throw new Error("Failed to start stream");
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let textBuffer = "";
+      let streamDone = false;
+
+      while (!streamDone) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        textBuffer += decoder.decode(value, { stream: true });
+
+        let newlineIndex: number;
+        while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
+          let line = textBuffer.slice(0, newlineIndex);
+          textBuffer = textBuffer.slice(newlineIndex + 1);
+          if (line.endsWith("\r")) line = line.slice(0, -1);
+          if (line.startsWith(":") || line.trim() === "") continue;
+          if (!line.startsWith("data: ")) continue;
+
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === "[DONE]") { streamDone = true; break; }
+
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
+            if (content) upsertAssistant(content);
+          } catch {
+            textBuffer = line + "\n" + textBuffer;
+            break;
+          }
+        }
+      }
+
+      // Final flush
+      if (textBuffer.trim()) {
+        for (let raw of textBuffer.split("\n")) {
+          if (!raw) continue;
+          if (raw.endsWith("\r")) raw = raw.slice(0, -1);
+          if (raw.startsWith(":") || raw.trim() === "") continue;
+          if (!raw.startsWith("data: ")) continue;
+          const jsonStr = raw.slice(6).trim();
+          if (jsonStr === "[DONE]") continue;
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
+            if (content) upsertAssistant(content);
+          } catch { /* ignore */ }
+        }
+      }
+    } catch (e) {
+      console.error("Chat error:", e);
+      toast.error("Failed to connect to AI assistant.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="panel-tactical flex flex-col h-full">
       <div className="flex items-center justify-between px-3 py-2 border-b border-panel-border bg-panel-header">
         <div className="flex items-center gap-2">
-          <div className="h-2 w-2 rounded-full bg-primary animate-pulse-glow" />
+          <div className={`h-2 w-2 rounded-full ${isLoading ? "bg-amber animate-pulse-glow" : "bg-primary animate-pulse-glow"}`} />
           <span className="text-[11px] font-mono uppercase tracking-wider text-primary">
             AI Intel Assistant
           </span>
         </div>
-        <span className="text-[10px] text-primary/50 font-mono">LLM</span>
+        <span className="text-[10px] text-primary/50 font-mono">
+          {isLoading ? "PROCESSING..." : "LIVE AI"}
+        </span>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
+        {messages.length === 0 && (
+          <div className="flex items-center justify-center h-full text-center">
+            <div>
+              <p className="text-[11px] text-muted-foreground font-mono mb-2">MERIDIAN AI READY</p>
+              <p className="text-[10px] text-muted-foreground/60 font-mono">
+                Query the intelligence database.
+                <br />Try: "What is the current threat level in Hormuz?"
+              </p>
+            </div>
+          </div>
+        )}
         {messages.map((msg, i) => (
           <motion.div
             key={i}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.2 }}
             className={`${
               msg.role === "user"
                 ? "bg-primary/5 border-primary/20"
@@ -40,10 +157,13 @@ const AIAssistant = () => {
             } border rounded-sm p-2.5`}
           >
             <p className="text-[9px] text-muted-foreground font-mono uppercase mb-1">
-              {msg.role === "user" ? "▸ ANALYST QUERY" : "▸ AI RESPONSE"}
+              {msg.role === "user" ? "▸ ANALYST QUERY" : "▸ MERIDIAN AI"}
             </p>
             <p className="text-[11px] text-foreground/80 leading-relaxed whitespace-pre-line">
               {msg.content}
+              {isLoading && msg.role === "assistant" && i === messages.length - 1 && (
+                <span className="inline-block w-1.5 h-3 bg-primary/70 ml-0.5 animate-pulse-glow" />
+              )}
             </p>
           </motion.div>
         ))}
@@ -55,10 +175,16 @@ const AIAssistant = () => {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && send()}
             placeholder="Query intelligence database..."
-            className="flex-1 bg-secondary/30 border border-panel-border rounded-sm px-3 py-1.5 text-[11px] font-mono text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50"
+            disabled={isLoading}
+            className="flex-1 bg-secondary/30 border border-panel-border rounded-sm px-3 py-1.5 text-[11px] font-mono text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 disabled:opacity-50"
           />
-          <button className="bg-primary/10 border border-primary/30 text-primary text-[10px] font-mono px-3 py-1.5 rounded-sm hover:bg-primary/20 transition-colors">
+          <button
+            onClick={send}
+            disabled={isLoading || !input.trim()}
+            className="bg-primary/10 border border-primary/30 text-primary text-[10px] font-mono px-3 py-1.5 rounded-sm hover:bg-primary/20 transition-colors disabled:opacity-30"
+          >
             SEND
           </button>
         </div>

@@ -1,0 +1,7 @@
+project_id = "akpvedbvrzbeniyhstfu"
+
+[functions.intel-chat]
+verify_jwt = false
+
+[functions.threat-engine]
+verify_jwt = false
