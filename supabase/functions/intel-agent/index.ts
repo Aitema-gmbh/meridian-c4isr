@@ -7,6 +7,33 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+async function fetchWithTimeout(url: string, opts: RequestInit = {}, timeoutMs = 15000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url, { ...opts, signal: controller.signal });
+    return resp;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchWithRetry(url: string, opts: RequestInit = {}, retries = 1): Promise<Response> {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const resp = await fetchWithTimeout(url, opts);
+      if (resp.ok || i === retries) return resp;
+      console.log(`[intel-agent] ${url} returned ${resp.status}, retry ${i + 1}...`);
+      await new Promise((r) => setTimeout(r, 2000));
+    } catch (e) {
+      console.log(`[intel-agent] fetch error ${url}:`, e);
+      if (i === retries) throw e;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+  throw new Error("unreachable");
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -24,29 +51,62 @@ serve(async (req) => {
     console.log("[intel-agent] Starting hourly analysis run...");
 
     // ===== PHASE 1: Fetch all data sources in parallel =====
-    const [gdelt1, gdelt2, gdelt3, adsbResp, reddit1, reddit2, reddit3, polymarket] = await Promise.allSettled([
-      fetch("https://api.gdeltproject.org/api/v2/doc/doc?query=(iran OR hormuz OR \"persian gulf\" OR IRGC)&mode=artlist&format=json&maxrecords=12&sort=datedesc"),
-      fetch("https://api.gdeltproject.org/api/v2/doc/doc?query=(\"US military\" OR CENTCOM OR deployment OR pentagon)&mode=artlist&format=json&maxrecords=10&sort=datedesc"),
-      fetch("https://api.gdeltproject.org/api/v2/doc/doc?query=(\"cyber attack\" OR \"critical infrastructure\" OR APT OR ransomware)&mode=artlist&format=json&maxrecords=8&sort=datedesc"),
-      fetch("https://api.adsb.lol/v2/mil"),
-      fetch("https://www.reddit.com/r/geopolitics/search.json?q=iran&sort=new&limit=8&restrict_sr=on&t=week", { headers: { "User-Agent": "MeridianAgent/1.0" } }),
-      fetch("https://www.reddit.com/r/worldnews/search.json?q=iran+OR+hormuz&sort=new&limit=8&restrict_sr=on&t=week", { headers: { "User-Agent": "MeridianAgent/1.0" } }),
-      fetch("https://www.reddit.com/r/iran/hot.json?limit=8", { headers: { "User-Agent": "MeridianAgent/1.0" } }),
-      fetch(`https://gamma-api.polymarket.com/events?active=true&closed=false&limit=8&title_contains=${encodeURIComponent("iran")}`),
+    const redditHeaders = { "User-Agent": "web:MeridianIntel:v1.0 (by /u/meridian_osint)", "Accept": "application/json" };
+
+    const [gdelt1, gdelt2, gdelt3, adsbResp, polymarket] = await Promise.allSettled([
+      fetchWithRetry("https://api.gdeltproject.org/api/v2/doc/doc?query=(iran OR hormuz OR \"persian gulf\" OR IRGC)&mode=artlist&format=json&maxrecords=12&sort=datedesc"),
+      fetchWithRetry("https://api.gdeltproject.org/api/v2/doc/doc?query=(\"US military\" OR CENTCOM OR deployment OR pentagon)&mode=artlist&format=json&maxrecords=10&sort=datedesc"),
+      fetchWithRetry("https://api.gdeltproject.org/api/v2/doc/doc?query=(\"cyber attack\" OR \"critical infrastructure\" OR APT OR ransomware)&mode=artlist&format=json&maxrecords=8&sort=datedesc"),
+      fetchWithTimeout("https://api.adsb.lol/v2/mil"),
+      fetchWithTimeout("https://gamma-api.polymarket.com/events?active=true&closed=false&limit=10&title_contains=iran"),
     ]);
 
-    // Parse helpers
-    const parseGdelt = async (resp: PromiseSettledResult<Response>) => {
-      if (resp.status !== "fulfilled" || !resp.value.ok) return [];
+    // Fetch Reddit via RSS (JSON API returns 403 from server-side)
+    const redditPosts: any[] = [];
+    const rssUrls = [
+      "https://www.reddit.com/r/geopolitics/search.rss?q=iran&sort=new&limit=8&restrict_sr=on&t=week",
+      "https://www.reddit.com/r/worldnews/search.rss?q=iran+OR+hormuz&sort=new&limit=8&restrict_sr=on&t=week",
+      "https://www.reddit.com/r/iran/.rss?limit=8",
+    ];
+    for (const url of rssUrls) {
+      try {
+        const resp = await fetchWithTimeout(url, { headers: redditHeaders });
+        if (resp.ok) {
+          const text = await resp.text();
+          const entries = text.match(/<entry>[\s\S]*?<\/entry>/g) || [];
+          const posts = entries.map((entry) => {
+            const titleMatch = entry.match(/<title[^>]*>([\s\S]*?)<\/title>/);
+            const linkMatch = entry.match(/<link[^>]*href="([^"]*)"[^>]*\/>/);
+            return {
+              title: (titleMatch?.[1] || "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"),
+              score: 0,
+              subreddit: url.split("/r/")[1]?.split("/")[0] || "unknown",
+              url: linkMatch?.[1] || "",
+            };
+          });
+          redditPosts.push(...posts);
+          console.log(`[intel-agent] Reddit RSS: ${posts.length} posts from r/${url.split("/r/")[1]?.split("/")[0]}`);
+        } else {
+          console.log(`[intel-agent] Reddit RSS r/${url.split("/r/")[1]?.split("/")[0]}: ${resp.status}`);
+        }
+      } catch (e) {
+        console.log(`[intel-agent] Reddit RSS fetch failed:`, e);
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+
+    // Parse GDELT
+    const parseGdelt = async (resp: PromiseSettledResult<Response>, label: string) => {
+      if (resp.status !== "fulfilled") { console.log(`[intel-agent] GDELT ${label}: rejected`); return []; }
+      if (!resp.value.ok) { console.log(`[intel-agent] GDELT ${label}: ${resp.value.status}`); return []; }
       try { const t = await resp.value.text(); if (!t.startsWith("{") && !t.startsWith("[")) return []; return JSON.parse(t).articles || []; } catch { return []; }
     };
-    const parseReddit = async (resp: PromiseSettledResult<Response>) => {
-      if (resp.status !== "fulfilled" || !resp.value.ok) return [];
-      try { const d = await resp.value.json(); return (d?.data?.children || []).map((c: any) => ({ title: c.data.title, score: c.data.score, subreddit: c.data.subreddit_name_prefixed, url: `https://reddit.com${c.data.permalink}` })); } catch { return []; }
-    };
 
-    const [arts1, arts2, arts3] = await Promise.all([parseGdelt(gdelt1), parseGdelt(gdelt2), parseGdelt(gdelt3)]);
-    const [rPosts1, rPosts2, rPosts3] = await Promise.all([parseReddit(reddit1), parseReddit(reddit2), parseReddit(reddit3)]);
+    const [arts1, arts2, arts3] = await Promise.all([
+      parseGdelt(gdelt1, "iran"), parseGdelt(gdelt2, "usmil"), parseGdelt(gdelt3, "cyber"),
+    ]);
+
+    console.log(`[intel-agent] GDELT: ${arts1.length} iran, ${arts2.length} usmil, ${arts3.length} cyber`);
 
     const taggedArticles = [
       ...arts1.slice(0, 12).map((a: any) => ({ ...a, queryTag: "IRAN_GULF" })),
@@ -54,7 +114,7 @@ serve(async (req) => {
       ...arts3.slice(0, 8).map((a: any) => ({ ...a, queryTag: "CYBER" })),
     ];
 
-    const redditPosts = [...rPosts1, ...rPosts2, ...rPosts3].sort((a: any, b: any) => b.score - a.score).slice(0, 15);
+    const sortedReddit = redditPosts.sort((a: any, b: any) => b.score - a.score).slice(0, 15);
 
     // ADS-B
     let milTrackCount = 0;
@@ -76,11 +136,30 @@ serve(async (req) => {
       } catch {}
     }
 
-    console.log(`[intel-agent] Data: ${taggedArticles.length} articles, ${redditPosts.length} reddit, ${milTrackCount} mil tracks, ${marketsList.length} markets`);
+    // Also search broader geopolitical terms
+    const extraTerms = ["war", "military conflict", "middle east"];
+    for (const term of extraTerms) {
+      try {
+        const resp = await fetchWithTimeout(`https://gamma-api.polymarket.com/events?active=true&closed=false&limit=5&title_contains=${encodeURIComponent(term)}`);
+        if (resp.ok) {
+          const events = await resp.json();
+          for (const ev of (Array.isArray(events) ? events : [])) {
+            const id = ev.id || ev.slug;
+            if (marketsList.some((m: any) => m.id === id)) continue;
+            for (const m of (ev.markets || [])) {
+              const op = m.outcomePrices ? (typeof m.outcomePrices === "string" ? JSON.parse(m.outcomePrices) : m.outcomePrices) : [];
+              marketsList.push({ question: m.question || ev.title, yesPrice: op[0] ? Math.round(parseFloat(op[0]) * 100) : null, volume: parseFloat(m.volume || "0"), url: `https://polymarket.com/event/${ev.slug || ev.id}` });
+            }
+          }
+        }
+      } catch {}
+    }
+
+    console.log(`[intel-agent] Data: ${taggedArticles.length} articles, ${sortedReddit.length} reddit, ${milTrackCount} mil tracks, ${marketsList.length} markets`);
 
     // ===== PHASE 2: AI Analysis =====
     const articleSummaries = taggedArticles.map((a: any, i: number) => `[${i + 1}] [${a.queryTag}] "${a.title}" (${a.domain}) URL: ${a.url || 'N/A'}`).join("\n");
-    const redditSummaries = redditPosts.map((p: any, i: number) => `[R${i + 1}] [${p.subreddit}] "${p.title}" (score: ${p.score})`).join("\n");
+    const redditSummaries = sortedReddit.map((p: any, i: number) => `[R${i + 1}] [${p.subreddit}] "${p.title}" (score: ${p.score})`).join("\n");
     const marketSummaries = marketsList.map((m: any) => `"${m.question}": ${m.yesPrice ?? '?'}% YES`).join("\n");
 
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -90,7 +169,7 @@ serve(async (req) => {
         model: "google/gemini-3-flash-preview",
         messages: [
           { role: "system", content: `You are a senior intelligence analyst conducting an hourly SITREP. Analyze OSINT articles, Reddit social signals, military tracking data, and prediction market odds. Produce: (1) intel items with source URLs, (2) a comprehensive FLASH REPORT, (3) threat probabilities, (4) WATCHCON level. Compare your threat assessment against prediction market prices and flag divergences.` },
-          { role: "user", content: `HOURLY INTELLIGENCE ANALYSIS\n\n=== GDELT ARTICLES (${taggedArticles.length}) ===\n${articleSummaries}\n\n=== REDDIT SOCIAL SIGNALS (${redditPosts.length}) ===\n${redditSummaries}\n\n=== ADS-B MILITARY ===\n${milTrackCount} military aircraft tracks in Gulf AOR\n\n=== POLYMARKET ODDS ===\n${marketSummaries || "No markets found"}\n\nProduce a comprehensive hourly analysis.` },
+          { role: "user", content: `HOURLY INTELLIGENCE ANALYSIS\n\n=== GDELT ARTICLES (${taggedArticles.length}) ===\n${articleSummaries || "None available"}\n\n=== REDDIT SOCIAL SIGNALS (${sortedReddit.length}) ===\n${redditSummaries || "None available"}\n\n=== ADS-B MILITARY ===\n${milTrackCount} military aircraft tracks in Gulf AOR\n\n=== POLYMARKET ODDS ===\n${marketSummaries || "No markets found"}\n\nProduce a comprehensive hourly analysis.` },
         ],
         tools: [{
           type: "function",
@@ -183,7 +262,7 @@ serve(async (req) => {
         raw_indicators: {
           articleCount: taggedArticles.length,
           milTrackCount,
-          redditPostCount: redditPosts.length,
+          redditPostCount: sortedReddit.length,
           marketCount: marketsList.length,
         },
       }),
@@ -205,7 +284,7 @@ serve(async (req) => {
           milTrackCount,
           averageSentiment: analysis.averageSentiment,
           dominantCategory: analysis.dominantCategory,
-          redditPostCount: redditPosts.length,
+          redditPostCount: sortedReddit.length,
           marketCount: marketsList.length,
           timestamp: new Date().toISOString(),
         },

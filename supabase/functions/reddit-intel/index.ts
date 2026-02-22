@@ -7,8 +7,33 @@ const corsHeaders = {
 };
 
 const REDDIT_HEADERS = {
-  "User-Agent": "MeridianIntel/1.0",
+  "User-Agent": "web:MeridianIntel:v1.0 (by /u/meridian_osint)",
+  "Accept": "application/json",
 };
+
+async function fetchWithRetry(url: string, maxRetries = 2): Promise<Response> {
+  for (let i = 0; i <= maxRetries; i++) {
+    try {
+      const resp = await fetch(url, { headers: REDDIT_HEADERS });
+      if (resp.ok) return resp;
+      if (resp.status === 429 && i < maxRetries) {
+        console.log(`[reddit-intel] 429 on ${url}, retry ${i + 1}...`);
+        await new Promise((r) => setTimeout(r, 2000 * (i + 1)));
+        continue;
+      }
+      console.log(`[reddit-intel] ${url} returned ${resp.status}`);
+      return resp;
+    } catch (e) {
+      console.log(`[reddit-intel] fetch error on ${url}:`, e);
+      if (i < maxRetries) {
+        await new Promise((r) => setTimeout(r, 2000 * (i + 1)));
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw new Error("Max retries exceeded");
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -19,36 +44,52 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
-    // Fetch from 3 subreddits in parallel
-    const [geo, world, iran] = await Promise.allSettled([
-      fetch("https://www.reddit.com/r/geopolitics/search.json?q=iran&sort=new&limit=10&restrict_sr=on&t=week", { headers: REDDIT_HEADERS }),
-      fetch("https://www.reddit.com/r/worldnews/search.json?q=iran+OR+hormuz+OR+persian+gulf&sort=new&limit=10&restrict_sr=on&t=week", { headers: REDDIT_HEADERS }),
-      fetch("https://www.reddit.com/r/iran/hot.json?limit=10", { headers: REDDIT_HEADERS }),
-    ]);
+    // Use Reddit RSS feeds (always public, no auth needed)
+    const rssUrls = [
+      "https://www.reddit.com/r/geopolitics/search.rss?q=iran&sort=new&limit=10&restrict_sr=on&t=week",
+      "https://www.reddit.com/r/worldnews/search.rss?q=iran+OR+hormuz+OR+persian+gulf&sort=new&limit=10&restrict_sr=on&t=week",
+      "https://www.reddit.com/r/iran/.rss?limit=10",
+    ];
 
-    const parseReddit = async (resp: PromiseSettledResult<Response>) => {
-      if (resp.status !== "fulfilled" || !resp.value.ok) return [];
+    const allResults: any[] = [];
+    for (const url of rssUrls) {
       try {
-        const data = await resp.value.json();
-        return (data?.data?.children || []).map((c: any) => ({
-          title: c.data.title,
-          score: c.data.score,
-          comments: c.data.num_comments,
-          url: `https://reddit.com${c.data.permalink}`,
-          subreddit: c.data.subreddit_name_prefixed,
-          created: c.data.created_utc,
-          selftext: (c.data.selftext || "").slice(0, 200),
-        }));
-      } catch { return []; }
-    };
+        const resp = await fetchWithRetry(url);
+        if (resp.ok) {
+          const text = await resp.text();
+          // Parse RSS/Atom XML for entries
+          const entries = text.match(/<entry>[\s\S]*?<\/entry>/g) || [];
+          const posts = entries.map((entry) => {
+            const titleMatch = entry.match(/<title[^>]*>([\s\S]*?)<\/title>/);
+            const linkMatch = entry.match(/<link[^>]*href="([^"]*)"[^>]*\/>/);
+            const updatedMatch = entry.match(/<updated>([\s\S]*?)<\/updated>/);
+            const categoryMatch = entry.match(/<category[^>]*term="([^"]*)"[^>]*\/>/);
+            return {
+              title: (titleMatch?.[1] || "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#39;/g, "'").replace(/&quot;/g, '"'),
+              score: 0,
+              comments: 0,
+              url: linkMatch?.[1] || "",
+              subreddit: categoryMatch?.[1] ? `r/${categoryMatch[1]}` : url.split("/r/")[1]?.split("/")[0] || "unknown",
+              created: updatedMatch?.[1] ? Math.floor(new Date(updatedMatch[1]).getTime() / 1000) : Math.floor(Date.now() / 1000),
+              selftext: "",
+            };
+          });
+          allResults.push(...posts);
+          console.log(`[reddit-intel] RSS: ${posts.length} posts from ${url.split("/r/")[1]?.split("/")[0] || url}`);
+        } else {
+          console.log(`[reddit-intel] RSS ${url.split("/r/")[1]?.split("/")[0]}: ${resp.status}`);
+        }
+      } catch (e) {
+        console.log(`[reddit-intel] RSS fetch failed:`, e);
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
 
-    const [geoPosts, worldPosts, iranPosts] = await Promise.all([
-      parseReddit(geo), parseReddit(world), parseReddit(iran),
-    ]);
-
-    const allPosts = [...geoPosts, ...worldPosts, ...iranPosts]
+    const allPosts = allResults
       .sort((a, b) => b.score - a.score)
       .slice(0, 20);
+
+    console.log(`[reddit-intel] Total posts collected: ${allPosts.length}`);
 
     if (allPosts.length === 0) {
       return new Response(
@@ -57,7 +98,7 @@ serve(async (req) => {
       );
     }
 
-    // AI analysis of Reddit posts
+    // AI analysis
     const postSummaries = allPosts
       .map((p, i) => `[${i + 1}] [${p.subreddit}] "${p.title}" (score: ${p.score}, comments: ${p.comments})`)
       .join("\n");
@@ -119,7 +160,6 @@ serve(async (req) => {
 
     if (!aiResponse.ok) {
       if (aiResponse.status === 429 || aiResponse.status === 402) {
-        // Return raw posts without AI analysis
         const rawItems = allPosts.slice(0, 10).map((p, i) => ({
           id: 1000 + i,
           timestamp: new Date(p.created * 1000).toISOString(),
