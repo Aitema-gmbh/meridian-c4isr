@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { MapContainer, TileLayer, CircleMarker, Tooltip as LeafletTooltip, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, CircleMarker, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { MOCK_ASSETS } from "@/data/mockData";
 
@@ -24,6 +24,25 @@ const MapInvalidator = () => {
     setTimeout(() => map.invalidateSize(), 100);
   }, [map]);
   return null;
+};
+
+const buildAircraftTooltip = (ac: AircraftData) => {
+  let html = `<div style="font-family:'JetBrains Mono',monospace;font-size:10px;line-height:1.4">`;
+  html += `<div style="color:hsl(185 80% 50%);font-weight:600">${ac.flight?.trim() || ac.hex}</div>`;
+  if (ac.r) html += `<div style="color:#999">REG: ${ac.r}</div>`;
+  if (ac.t) html += `<div style="color:#999">TYPE: ${ac.t}</div>`;
+  if (ac.alt_baro) html += `<div style="color:#999">ALT: ${ac.alt_baro === "ground" ? "GND" : `${ac.alt_baro} ft`}</div>`;
+  if (ac.gs) html += `<div style="color:#999">SPD: ${Math.round(ac.gs)} kts</div>`;
+  html += `</div>`;
+  return html;
+};
+
+const buildAssetTooltip = (name: string, type: string, status: string, color: string, statusColor: string) => {
+  return `<div style="font-family:'JetBrains Mono',monospace;font-size:10px;line-height:1.4">
+    <div style="color:${color};font-weight:600">${name}</div>
+    <div style="color:#999">${type}</div>
+    <div style="color:${statusColor}">${status}</div>
+  </div>`;
 };
 
 const ThreatMatrix = () => {
@@ -102,22 +121,15 @@ const ThreatMatrix = () => {
                 fillOpacity: 0.7,
                 weight: 1,
               }}
-            >
-              <LeafletTooltip
-                direction="top"
-                className="leaflet-tooltip-tactical"
-              >
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "10px", lineHeight: 1.4 }}>
-                  <div style={{ color: "hsl(185 80% 50%)", fontWeight: 600 }}>
-                    {ac.flight?.trim() || ac.hex}
-                  </div>
-                  {ac.r && <div style={{ color: "#999" }}>REG: {ac.r}</div>}
-                  {ac.t && <div style={{ color: "#999" }}>TYPE: {ac.t}</div>}
-                  {ac.alt_baro && <div style={{ color: "#999" }}>ALT: {ac.alt_baro === "ground" ? "GND" : `${ac.alt_baro} ft`}</div>}
-                  {ac.gs && <div style={{ color: "#999" }}>SPD: {Math.round(ac.gs)} kts</div>}
-                </div>
-              </LeafletTooltip>
-            </CircleMarker>
+              eventHandlers={{
+                add: (e) => {
+                  e.target.bindTooltip(buildAircraftTooltip(ac), {
+                    direction: "top",
+                    className: "leaflet-tooltip-tactical",
+                  });
+                },
+              }}
+            />
           ))}
 
           {/* US/Allied mock assets */}
@@ -132,18 +144,18 @@ const ThreatMatrix = () => {
                 fillOpacity: 0.5,
                 weight: 2,
               }}
-            >
-              <LeafletTooltip direction="top" className="leaflet-tooltip-tactical">
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "10px", lineHeight: 1.4 }}>
-                  <div style={{ color: "hsl(185 80% 50%)", fontWeight: 600 }}>{asset.name}</div>
-                  <div style={{ color: "#999" }}>{asset.type}</div>
-                  <div style={{ color: "hsl(145 70% 45%)" }}>{asset.status}</div>
-                </div>
-              </LeafletTooltip>
-            </CircleMarker>
+              eventHandlers={{
+                add: (e) => {
+                  e.target.bindTooltip(
+                    buildAssetTooltip(asset.name, asset.type, asset.status, "hsl(185 80% 50%)", "hsl(145 70% 45%)"),
+                    { direction: "top", className: "leaflet-tooltip-tactical" }
+                  );
+                },
+              }}
+            />
           ))}
 
-          {/* Iranian mock assets — diamond-like using small radius + crimson */}
+          {/* Iranian mock assets */}
           {MOCK_ASSETS.iran.map((asset) => (
             <CircleMarker
               key={asset.id}
@@ -155,15 +167,15 @@ const ThreatMatrix = () => {
                 fillOpacity: 0.6,
                 weight: 2,
               }}
-            >
-              <LeafletTooltip direction="top" className="leaflet-tooltip-tactical">
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "10px", lineHeight: 1.4 }}>
-                  <div style={{ color: "hsl(0 85% 55%)", fontWeight: 600 }}>{asset.name}</div>
-                  <div style={{ color: "#999" }}>{asset.type}</div>
-                  <div style={{ color: "hsl(0 85% 55% / 0.7)" }}>{asset.status}</div>
-                </div>
-              </LeafletTooltip>
-            </CircleMarker>
+              eventHandlers={{
+                add: (e) => {
+                  e.target.bindTooltip(
+                    buildAssetTooltip(asset.name, asset.type, asset.status, "hsl(0 85% 55%)", "hsl(0 85% 55% / 0.7)"),
+                    { direction: "top", className: "leaflet-tooltip-tactical" }
+                  );
+                },
+              }}
+            />
           ))}
         </MapContainer>
 
