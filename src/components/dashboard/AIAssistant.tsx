@@ -32,7 +32,7 @@ const AIAssistant = ({ liveData, marketsData }: { liveData: LiveIntelData | null
     if (liveData) {
       const m = liveData.metadata;
       const topItems = liveData.items.slice(0, 8).map((it, i) => `${i + 1}. [${it.priority}] [${it.threat_tag || "?"}] ${it.content}`).join("\n");
-      ctx += `\n\nCURRENT LIVE INTELLIGENCE (${m.timestamp}):\n- Mil aircraft Gulf AOR: ${m.milTrackCount}\n- GDELT articles (3 streams): ${m.articleCount}\n- Dominant threat: ${m.dominantCategory || "?"}\n- Avg sentiment: ${m.averageSentiment.toFixed(2)}\n`;
+      ctx += `\n\nCURRENT LIVE INTELLIGENCE (${m.timestamp}):\n- Mil aircraft Gulf AOR: ${m.milTrackCount}\n- GDELT articles (3 streams): ${m.articleCount}\n- Dominant threat: ${m.dominantCategory || "?"}\n- Avg sentiment: ${(m.averageSentiment ?? 0).toFixed(2)}\n`;
       if (liveData.flashReport) ctx += `\nFLASH REPORT: ${liveData.flashReport}\n`;
       ctx += `\nTop Intel:\n${topItems}`;
     }

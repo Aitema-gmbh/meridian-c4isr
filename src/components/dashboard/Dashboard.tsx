@@ -74,7 +74,7 @@ const DataTicker = ({ liveData, marketsData, lastAnalyzed }: { liveData: LiveInt
     agoMinutes !== null ? `LAST AGENT RUN: ${agoMinutes}m AGO` : "AGENT: AWAITING FIRST RUN",
     m ? `ADS-B: ${m.milTrackCount} MIL TRACKS ACTIVE` : "ADS-B: ACQUIRING...",
     m ? `GDELT: ${m.articleCount} CONFLICT ARTICLES (3 STREAMS)` : "GDELT: LOADING...",
-    m ? `OSINT SENTIMENT: ${m.averageSentiment.toFixed(2)}` : "OSINT: ANALYZING...",
+    m ? `OSINT SENTIMENT: ${(m.averageSentiment ?? 0).toFixed(2)}` : "OSINT: ANALYZING...",
     m?.dominantCategory ? `DOMINANT THREAT: ${m.dominantCategory}` : "THREAT: CALCULATING...",
     topMarket ? `POLYMARKET: ${topMarket.question.slice(0, 40)}... ${topMarket.yesPrice ?? '?'}%` : "POLYMARKET: LOADING...",
     "MARITIME: AIS GAPS DETECTED — HORMUZ WEST",

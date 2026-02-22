@@ -139,9 +139,9 @@ const ThreatEngine = ({ liveMetadata, marketData = [] }: { liveMetadata: LiveMet
             sentimentScore: meta.averageSentiment,
             flightAnomalyIndex: Math.min(meta.milTrackCount * 3, 100),
             maritimeAnomalyIndex: 45,
-            goldsteinScale: meta.averageSentiment * 10,
+            goldsteinScale: (meta.averageSentiment ?? 0) * 10,
             irgcnDeployments: "200% above baseline",
-            diplomaticSignals: `${meta.articleCount} GDELT conflict articles across 3 streams. Dominant: ${meta.dominantCategory || "MILITARY"}. Sentiment: ${meta.averageSentiment.toFixed(2)}`,
+            diplomaticSignals: `${meta.articleCount} GDELT conflict articles across 3 streams. Dominant: ${meta.dominantCategory || "MILITARY"}. Sentiment: ${(meta.averageSentiment ?? 0).toFixed(2)}`,
             cyberIndicators: "APT campaigns detected targeting Gulf energy infrastructure",
           }
         : {
