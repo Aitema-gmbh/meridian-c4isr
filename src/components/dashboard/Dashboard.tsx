@@ -147,13 +147,8 @@ const Dashboard = () => {
         setLastAnalyzed(snap.created_at);
       }
 
-      if (marketSnap.data?.[0]) {
-        const snap = marketSnap.data[0] as any;
-        setMarketsData({
-          markets: (snap.markets || []) as MarketItem[],
-          timestamp: snap.created_at,
-        });
-      }
+      // Skip DB fallback for markets — stale data causes irrelevant threat analysis
+      // Markets are only loaded from fresh API calls
     } catch (e) {
       console.error("DB load error:", e);
     }

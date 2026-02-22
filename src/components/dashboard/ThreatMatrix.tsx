@@ -10,22 +10,75 @@ interface AircraftData {
   lon?: number;
   alt_baro?: number | string;
   gs?: number;
+  track?: number;
   t?: string;
   category?: string;
   r?: string;
   dbFlags?: number;
 }
 
-// Show global military aircraft, not just Gulf
 const GULF_BOUNDS = { latMin: -90, latMax: 90, lngMin: -180, lngMax: 180 };
 
+// Color-code aircraft by type
+const getAircraftColor = (type?: string): string => {
+  if (!type) return "#ffffff";
+  const t = type.toUpperCase();
+  // Transport
+  if (["C17", "C30J", "C130", "A400", "KC135", "KC10", "KC46", "C5", "C40", "C37", "C32", "C12", "C2"].some(x => t.includes(x))) return "#00d4ff";
+  // Tanker/ISR
+  if (["E3", "E8", "RC135", "P8", "EP3", "E6", "E2", "RQ4", "MQ9", "MQ4", "U2", "AWACS"].some(x => t.includes(x))) return "#ffaa00";
+  // Helicopter
+  if (["H60", "NH90", "A139", "H53", "H47", "V22", "CH47", "UH60", "AH64", "H1"].some(x => t.includes(x))) return "#44ff88";
+  // Fighter
+  if (["F15", "F16", "F18", "F22", "F35", "FA18", "EF2K", "EUFI", "TYPH", "RFAL", "B1", "B2", "B52"].some(x => t.includes(x))) return "#ff6644";
+  return "#ffffff";
+};
+
+const getAircraftCategory = (type?: string): string => {
+  if (!type) return "UNKNOWN";
+  const t = type.toUpperCase();
+  if (["C17", "C30J", "C130", "A400", "KC135", "KC10", "KC46", "C5", "C40"].some(x => t.includes(x))) return "TRANSPORT";
+  if (["E3", "E8", "RC135", "P8", "EP3", "RQ4", "MQ9", "U2"].some(x => t.includes(x))) return "ISR/TANKER";
+  if (["H60", "NH90", "A139", "H53", "H47", "V22", "CH47", "AH64"].some(x => t.includes(x))) return "ROTARY";
+  if (["F15", "F16", "F18", "F22", "F35", "B1", "B2", "B52"].some(x => t.includes(x))) return "FIGHTER/BOMBER";
+  return "MIL";
+};
+
+const createAircraftIcon = (ac: AircraftData): L.DivIcon => {
+  const color = getAircraftColor(ac.t);
+  const rotation = ac.track ?? 0;
+  const callsign = ac.flight?.trim() || "";
+  const alt = ac.alt_baro === "ground" ? "GND" : ac.alt_baro ? `${Math.round(Number(ac.alt_baro) / 100)}` : "";
+
+  const html = `
+    <div style="position:relative;width:24px;height:24px;">
+      <svg viewBox="0 0 24 24" width="24" height="24" style="transform:rotate(${rotation}deg);filter:drop-shadow(0 0 3px ${color}80);">
+        <path d="M12 2 L15 10 L20 12 L15 14 L15 20 L12 18 L9 20 L9 14 L4 12 L9 10 Z" 
+              fill="${color}" fill-opacity="0.9" stroke="${color}" stroke-width="0.5"/>
+      </svg>
+      ${callsign ? `<span style="position:absolute;left:26px;top:2px;font-family:'JetBrains Mono',monospace;font-size:8px;color:${color};white-space:nowrap;text-shadow:0 0 4px rgba(0,0,0,0.9);opacity:0.85;">${callsign}${alt ? " " + alt : ""}</span>` : ""}
+    </div>
+  `;
+
+  return L.divIcon({
+    html,
+    className: "",
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  });
+};
+
 const buildAircraftTooltip = (ac: AircraftData) => {
+  const color = getAircraftColor(ac.t);
+  const cat = getAircraftCategory(ac.t);
   let html = `<div style="font-family:'JetBrains Mono',monospace;font-size:10px;line-height:1.4">`;
-  html += `<div style="color:hsl(185 80% 50%);font-weight:600">${ac.flight?.trim() || ac.hex}</div>`;
+  html += `<div style="color:${color};font-weight:600">${ac.flight?.trim() || ac.hex}</div>`;
+  html += `<div style="color:#666;font-size:8px">${cat}</div>`;
   if (ac.r) html += `<div style="color:#999">REG: ${ac.r}</div>`;
   if (ac.t) html += `<div style="color:#999">TYPE: ${ac.t}</div>`;
-  if (ac.alt_baro) html += `<div style="color:#999">ALT: ${ac.alt_baro === "ground" ? "GND" : `${ac.alt_baro} ft`}</div>`;
+  if (ac.alt_baro) html += `<div style="color:#999">ALT: ${ac.alt_baro === "ground" ? "GND" : `FL${Math.round(Number(ac.alt_baro) / 100)}`}</div>`;
   if (ac.gs) html += `<div style="color:#999">SPD: ${Math.round(ac.gs)} kts</div>`;
+  if (ac.track != null) html += `<div style="color:#999">HDG: ${Math.round(ac.track)}°</div>`;
   html += `</div>`;
   return html;
 };
@@ -45,7 +98,6 @@ const ThreatMatrix = () => {
   const mapRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
 
-  // Initialize map once
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
 
@@ -64,7 +116,6 @@ const ThreatMatrix = () => {
     markersLayerRef.current = markersLayer;
     mapRef.current = map;
 
-    // Add static asset markers
     MOCK_ASSETS.us.forEach((asset) => {
       L.circleMarker([asset.lat, asset.lng], {
         radius: 7,
@@ -123,17 +174,11 @@ const ThreatMatrix = () => {
           a.lon! <= GULF_BOUNDS.lngMax
       );
 
-      // Update markers
       if (markersLayerRef.current) {
         markersLayerRef.current.clearLayers();
         ac.forEach((a) => {
-          L.circleMarker([a.lat!, a.lon!], {
-            radius: 4,
-            color: "hsl(185 80% 50%)",
-            fillColor: "hsl(185 80% 50%)",
-            fillOpacity: 0.7,
-            weight: 1,
-          })
+          const icon = createAircraftIcon(a);
+          L.marker([a.lat!, a.lon!], { icon })
             .bindTooltip(buildAircraftTooltip(a), {
               direction: "top",
               className: "leaflet-tooltip-tactical",
@@ -174,23 +219,29 @@ const ThreatMatrix = () => {
 
       <div className="relative flex-1 overflow-hidden">
         <div ref={mapContainerRef} style={{ height: "100%", width: "100%", background: "hsl(220 20% 4%)" }} />
-
-        {/* Scanline overlay */}
         <div className="absolute inset-0 scanline pointer-events-none z-[1000]" />
 
         {/* Legend */}
-        <div className="absolute bottom-2 left-2 bg-background/80 border border-panel-border rounded-sm px-2 py-1.5 flex items-center gap-4 z-[1000]">
+        <div className="absolute bottom-2 left-2 bg-background/80 border border-panel-border rounded-sm px-2 py-1.5 flex items-center gap-3 z-[1000]">
           <div className="flex items-center gap-1.5">
-            <div className="h-2 w-2 rounded-full bg-primary" />
-            <span className="text-[9px] text-primary/70 font-mono">US/ALLIED</span>
+            <div className="h-2 w-2 rounded-full" style={{ background: "#00d4ff" }} />
+            <span className="text-[9px] text-primary/70 font-mono">TRANSPORT</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="h-2 w-2 rounded-full" style={{ background: "#ffaa00" }} />
+            <span className="text-[9px] font-mono" style={{ color: "#ffaa00aa" }}>ISR/TANKER</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="h-2 w-2 rounded-full" style={{ background: "#44ff88" }} />
+            <span className="text-[9px] font-mono" style={{ color: "#44ff88aa" }}>ROTARY</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="h-2 w-2 rounded-full" style={{ background: "#ff6644" }} />
+            <span className="text-[9px] font-mono" style={{ color: "#ff6644aa" }}>FIGHTER</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="h-2 w-2 rounded-full bg-crimson" />
             <span className="text-[9px] text-crimson/70 font-mono">HOSTILE</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="h-2 w-2 rounded-full bg-primary opacity-70" />
-            <span className="text-[9px] text-primary/50 font-mono">ADS-B MIL</span>
           </div>
         </div>
       </div>
