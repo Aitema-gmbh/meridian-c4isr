@@ -139,6 +139,16 @@ serve(async (req) => {
       items_count: articles.length + otxPulses.length,
     });
 
+    // Welford baseline update
+    const now = new Date();
+    const dow = now.getUTCDay();
+    const hour = now.getUTCHours();
+    await supabase.from("agent_baselines").upsert({
+      agent_name: "cyber", metric_name: "cyber_threat_level",
+      day_of_week: dow, hour_of_day: hour,
+      mean: analysis.cyberThreatLevel, variance: 0, count: 1, updated_at: now.toISOString(),
+    }, { onConflict: "agent_name,metric_name,day_of_week,hour_of_day" });
+
     console.log("[agent-cyber] Report saved. Threat:", analysis.cyberThreatLevel);
     return new Response(JSON.stringify({ success: true, cyberThreatLevel: analysis.cyberThreatLevel }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

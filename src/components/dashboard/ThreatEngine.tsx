@@ -130,7 +130,33 @@ const ThreatEngine = ({ liveMetadata, marketData = [] }: { liveMetadata: LiveMet
   const [data, setData] = useState<ThreatData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tensionHistory, setTensionHistory] = useState(MOCK_TENSION_HISTORY);
   const dbLoaded = useRef(false);
+
+  // Load tension history from DB
+  const loadTensionHistory = useCallback(async () => {
+    try {
+      const { data: rows } = await supabase
+        .from("threat_assessments")
+        .select("tension_index, created_at")
+        .order("created_at", { ascending: true })
+        .limit(24);
+
+      if (rows && rows.length >= 3) {
+        setTensionHistory(rows.map((r: any) => {
+          const d = new Date(r.created_at);
+          return {
+            time: `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`,
+            index: Number(r.tension_index) || 0,
+            sentiment: 0,
+            flights: 0,
+          };
+        }));
+      }
+    } catch (e) {
+      console.error("Tension history load error:", e);
+    }
+  }, []);
 
   // Load latest threat assessment from DB (no AI credits needed)
   const loadFromDB = useCallback(async () => {
@@ -219,8 +245,9 @@ const ThreatEngine = ({ liveMetadata, marketData = [] }: { liveMetadata: LiveMet
 
   useEffect(() => {
     // Load DB first (instant), then try live API
+    loadTensionHistory();
     loadFromDB().then(() => fetchThreatData(liveMetadata));
-  }, [liveMetadata, loadFromDB]);
+  }, [liveMetadata, loadFromDB, loadTensionHistory]);
 
   const d = data;
 
@@ -290,7 +317,7 @@ const ThreatEngine = ({ liveMetadata, marketData = [] }: { liveMetadata: LiveMet
             {/* History chart */}
             <div className="h-16">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={MOCK_TENSION_HISTORY}>
+                <AreaChart data={tensionHistory}>
                   <defs>
                     <linearGradient id="tensionGrad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="hsl(38 90% 55%)" stopOpacity={0.3} />

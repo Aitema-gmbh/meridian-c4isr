@@ -144,6 +144,16 @@ serve(async (req) => {
     // Backward compat
     await supabase.from("market_snapshots").insert({ markets: topMarkets });
 
+    // Welford baseline update
+    const now = new Date();
+    const dow = now.getUTCDay();
+    const hour = now.getUTCHours();
+    await supabase.from("agent_baselines").upsert({
+      agent_name: "markets", metric_name: "market_count",
+      day_of_week: dow, hour_of_day: hour,
+      mean: topMarkets.length, variance: 0, count: 1, updated_at: now.toISOString(),
+    }, { onConflict: "agent_name,metric_name,day_of_week,hour_of_day" });
+
     console.log("[agent-markets] Report saved.", topMarkets.length, "markets,", significantMoves.length, "moves");
     return new Response(JSON.stringify({ success: true, marketCount: topMarkets.length, moves: significantMoves.length }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

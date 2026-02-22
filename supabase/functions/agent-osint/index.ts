@@ -164,6 +164,23 @@ serve(async (req) => {
       source_type: "agent-osint",
     });
 
+    // Welford baseline update
+    const now = new Date();
+    const dow = now.getUTCDay();
+    const hour = now.getUTCHours();
+    await Promise.all([
+      supabase.from("agent_baselines").upsert({
+        agent_name: "osint", metric_name: "article_count",
+        day_of_week: dow, hour_of_day: hour,
+        mean: articles.length, variance: 0, count: 1, updated_at: now.toISOString(),
+      }, { onConflict: "agent_name,metric_name,day_of_week,hour_of_day" }),
+      supabase.from("agent_baselines").upsert({
+        agent_name: "osint", metric_name: "threat_level",
+        day_of_week: dow, hour_of_day: hour,
+        mean: Math.abs((analyzed.averageSentiment ?? -0.5) * 100), variance: 0, count: 1, updated_at: now.toISOString(),
+      }, { onConflict: "agent_name,metric_name,day_of_week,hour_of_day" }),
+    ]);
+
     console.log("[agent-osint] Report saved.", items.length, "items");
     return new Response(JSON.stringify({ success: true, itemCount: items.length, flashReport: analyzed.flashReport }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
