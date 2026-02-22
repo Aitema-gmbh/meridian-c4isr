@@ -13,6 +13,10 @@ export default {
       },
     },
     extend: {
+      fontFamily: {
+        mono: ["'JetBrains Mono'", "monospace"],
+        sans: ["'Inter'", "sans-serif"],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -57,6 +61,28 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        // Tactical colors
+        cyan: {
+          DEFAULT: "hsl(var(--cyan-glow))",
+          dim: "hsl(var(--cyan-dim))",
+        },
+        amber: {
+          DEFAULT: "hsl(var(--amber-alert))",
+          dim: "hsl(var(--amber-dim))",
+        },
+        crimson: {
+          DEFAULT: "hsl(var(--crimson-hostile))",
+          dim: "hsl(var(--crimson-dim))",
+        },
+        tactical: {
+          green: "hsl(var(--green-active))",
+          "green-dim": "hsl(var(--green-dim))",
+        },
+        panel: {
+          DEFAULT: "hsl(var(--panel-bg))",
+          border: "hsl(var(--panel-border))",
+          header: "hsl(var(--panel-header))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -65,25 +91,22 @@ export default {
       },
       keyframes: {
         "accordion-down": {
-          from: {
-            height: "0",
-          },
-          to: {
-            height: "var(--radix-accordion-content-height)",
-          },
+          from: { height: "0" },
+          to: { height: "var(--radix-accordion-content-height)" },
         },
         "accordion-up": {
-          from: {
-            height: "var(--radix-accordion-content-height)",
-          },
-          to: {
-            height: "0",
-          },
+          from: { height: "var(--radix-accordion-content-height)" },
+          to: { height: "0" },
+        },
+        "pulse-glow": {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.4" },
         },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "pulse-glow": "pulse-glow 2s ease-in-out infinite",
       },
     },
   },
