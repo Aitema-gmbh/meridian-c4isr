@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { MapContainer, TileLayer, CircleMarker, useMap } from "react-leaflet";
+import { useState, useEffect, useCallback, useRef } from "react";
+import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MOCK_ASSETS } from "@/data/mockData";
 
@@ -17,14 +17,6 @@ interface AircraftData {
 }
 
 const GULF_BOUNDS = { latMin: 20, latMax: 35, lngMin: 44, lngMax: 65 };
-
-const MapInvalidator = () => {
-  const map = useMap();
-  useEffect(() => {
-    setTimeout(() => map.invalidateSize(), 100);
-  }, [map]);
-  return null;
-};
 
 const buildAircraftTooltip = (ac: AircraftData) => {
   let html = `<div style="font-family:'JetBrains Mono',monospace;font-size:10px;line-height:1.4">`;
@@ -46,9 +38,70 @@ const buildAssetTooltip = (name: string, type: string, status: string, color: st
 };
 
 const ThreatMatrix = () => {
-  const [aircraft, setAircraft] = useState<AircraftData[]>([]);
   const [trackCount, setTrackCount] = useState(0);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const markersLayerRef = useRef<L.LayerGroup | null>(null);
+
+  // Initialize map once
+  useEffect(() => {
+    if (!mapContainerRef.current || mapRef.current) return;
+
+    const map = L.map(mapContainerRef.current, {
+      center: [26.5, 53],
+      zoom: 5,
+      zoomControl: false,
+      attributionControl: false,
+    });
+
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+      subdomains: "abcd",
+    }).addTo(map);
+
+    const markersLayer = L.layerGroup().addTo(map);
+    markersLayerRef.current = markersLayer;
+    mapRef.current = map;
+
+    // Add static asset markers
+    MOCK_ASSETS.us.forEach((asset) => {
+      L.circleMarker([asset.lat, asset.lng], {
+        radius: 7,
+        color: "hsl(185 80% 50%)",
+        fillColor: "hsl(185 80% 60%)",
+        fillOpacity: 0.5,
+        weight: 2,
+      })
+        .bindTooltip(buildAssetTooltip(asset.name, asset.type, asset.status, "hsl(185 80% 50%)", "hsl(145 70% 45%)"), {
+          direction: "top",
+          className: "leaflet-tooltip-tactical",
+        })
+        .addTo(map);
+    });
+
+    MOCK_ASSETS.iran.forEach((asset) => {
+      L.circleMarker([asset.lat, asset.lng], {
+        radius: 5,
+        color: "hsl(0 85% 55%)",
+        fillColor: "hsl(0 85% 55%)",
+        fillOpacity: 0.6,
+        weight: 2,
+      })
+        .bindTooltip(buildAssetTooltip(asset.name, asset.type, asset.status, "hsl(0 85% 55%)", "hsl(0 85% 55% / 0.7)"), {
+          direction: "top",
+          className: "leaflet-tooltip-tactical",
+        })
+        .addTo(map);
+    });
+
+    setTimeout(() => map.invalidateSize(), 100);
+
+    return () => {
+      map.remove();
+      mapRef.current = null;
+      markersLayerRef.current = null;
+    };
+  }, []);
 
   const fetchAircraft = useCallback(async () => {
     try {
@@ -64,7 +117,26 @@ const ThreatMatrix = () => {
           a.lon! >= GULF_BOUNDS.lngMin &&
           a.lon! <= GULF_BOUNDS.lngMax
       );
-      setAircraft(ac);
+
+      // Update markers
+      if (markersLayerRef.current) {
+        markersLayerRef.current.clearLayers();
+        ac.forEach((a) => {
+          L.circleMarker([a.lat!, a.lon!], {
+            radius: 4,
+            color: "hsl(185 80% 50%)",
+            fillColor: "hsl(185 80% 50%)",
+            fillOpacity: 0.7,
+            weight: 1,
+          })
+            .bindTooltip(buildAircraftTooltip(a), {
+              direction: "top",
+              className: "leaflet-tooltip-tactical",
+            })
+            .addTo(markersLayerRef.current!);
+        });
+      }
+
       setTrackCount(ac.length);
       setLastUpdate(new Date());
     } catch (e) {
@@ -96,88 +168,7 @@ const ThreatMatrix = () => {
       </div>
 
       <div className="relative flex-1 overflow-hidden">
-        <MapContainer
-          center={[26.5, 53]}
-          zoom={5}
-          style={{ height: "100%", width: "100%", background: "hsl(220 20% 4%)" }}
-          zoomControl={false}
-          attributionControl={false}
-        >
-          <MapInvalidator />
-          <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-            subdomains="abcd"
-          />
-
-          {/* Live ADS-B military aircraft */}
-          {aircraft.map((ac) => (
-            <CircleMarker
-              key={ac.hex}
-              center={[ac.lat!, ac.lon!]}
-              radius={4}
-              pathOptions={{
-                color: "hsl(185 80% 50%)",
-                fillColor: "hsl(185 80% 50%)",
-                fillOpacity: 0.7,
-                weight: 1,
-              }}
-              eventHandlers={{
-                add: (e) => {
-                  e.target.bindTooltip(buildAircraftTooltip(ac), {
-                    direction: "top",
-                    className: "leaflet-tooltip-tactical",
-                  });
-                },
-              }}
-            />
-          ))}
-
-          {/* US/Allied mock assets */}
-          {MOCK_ASSETS.us.map((asset) => (
-            <CircleMarker
-              key={asset.id}
-              center={[asset.lat, asset.lng]}
-              radius={7}
-              pathOptions={{
-                color: "hsl(185 80% 50%)",
-                fillColor: "hsl(185 80% 60%)",
-                fillOpacity: 0.5,
-                weight: 2,
-              }}
-              eventHandlers={{
-                add: (e) => {
-                  e.target.bindTooltip(
-                    buildAssetTooltip(asset.name, asset.type, asset.status, "hsl(185 80% 50%)", "hsl(145 70% 45%)"),
-                    { direction: "top", className: "leaflet-tooltip-tactical" }
-                  );
-                },
-              }}
-            />
-          ))}
-
-          {/* Iranian mock assets */}
-          {MOCK_ASSETS.iran.map((asset) => (
-            <CircleMarker
-              key={asset.id}
-              center={[asset.lat, asset.lng]}
-              radius={5}
-              pathOptions={{
-                color: "hsl(0 85% 55%)",
-                fillColor: "hsl(0 85% 55%)",
-                fillOpacity: 0.6,
-                weight: 2,
-              }}
-              eventHandlers={{
-                add: (e) => {
-                  e.target.bindTooltip(
-                    buildAssetTooltip(asset.name, asset.type, asset.status, "hsl(0 85% 55%)", "hsl(0 85% 55% / 0.7)"),
-                    { direction: "top", className: "leaflet-tooltip-tactical" }
-                  );
-                },
-              }}
-            />
-          ))}
-        </MapContainer>
+        <div ref={mapContainerRef} style={{ height: "100%", width: "100%", background: "hsl(220 20% 4%)" }} />
 
         {/* Scanline overlay */}
         <div className="absolute inset-0 scanline pointer-events-none z-[1000]" />
