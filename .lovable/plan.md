@@ -1,313 +1,205 @@
 
 
-# MERIDIAN Multi-Agent Intelligence System v2
+# Wettbewerbsanalyse und Verbesserungsplan fuer MERIDIAN
 
-## Status Quo
+## Was es auf GitHub gibt
 
-Aktuell gibt es ein monolithisches System:
-- `intel-agent`: Macht alles auf einmal (GDELT + Reddit + ADS-B + Polymarket + AI-Analyse + DB-Speicherung)
-- `live-intel`: Echtzeit-Version fuer Frontend (GDELT + ADS-B)
-- `reddit-intel`: Separate Reddit-Analyse
-- `threat-engine`: AI-basierte Threat-Berechnung
-- `prediction-markets`: Polymarket Iran-Markets
-- `ais-proxy`: Militaer-Schiffsdatenbank + optionale Live-AIS
+### 1. World Monitor (9.2k Stars) -- Der Platzhirsch
+- 35+ Datenlayer auf 3D-WebGL-Globe (deck.gl + MapLibre)
+- 150+ RSS-Feeds, 8 Live-Videostreams, 19 Live-Webcams
+- Country Instability Index (CII) fuer 22 Laender
+- Focal Point Detection (Konvergenz mehrerer Signale)
+- Temporal Baseline Anomaly Detection (Welford's Algorithm, 90-Tage-Fenster, Z-Score)
+- AIS Chokepoint Detection (8 strategische Meerengen)
+- Local LLM Support (Ollama/LM Studio) mit 4-stufiger Fallback-Kette
+- Desktop-App (Tauri) mit OS-Keychain fuer API-Keys
+- Finance-Variante mit 92 Boersen, 13 Zentralbanken
+- Schwaeche: Kein autonomes Agentensystem, kein Multi-Agent-Synthese-Loop
 
-Das Problem: Alles laeuft reaktiv (Frontend ruft an), es gibt keinen dauerhaften Agenten-Zyklus, und die Datenquellen sind limitiert.
+### 2. Delta Intelligence (9 Stars, von Anatoly Yakovenko/Solana)
+- 15 Live-Signale normalisiert auf 0-100
+- Pentagon Pizza Tracker ("PizzINT") -- tatsaechlich implementiert
+- Wikipedia-Krisen-Korrelation (Pageviews)
+- Safe-Haven-Flows (CHF/USD, JPY/USD)
+- Kalshi + Polymarket Integration
+- Schwaeche: Kein AI, kein persistenter Speicher, keine Agenten, nur Polling
 
-## Recherche-Ergebnisse: Was ist WIRKLICH kostenlos und verfuegbar?
+### 3. GeoSentinel (420 Stars)
+- Python/Flask mit YOLO-Objekterkennung
+- Live AIS + Flug-Tracking
+- Dark-Web-Suche via TOR
+- Ollama AI Integration
+- Schwaeche: Kein Web-Dashboard, kein Agentensystem, erfordert lokale Installation
 
-### Verifizierte kostenlose Datenquellen (kein API-Key noetig)
+### 4. WarAgent (Forschung)
+- LLM-basierte Multi-Agent-Simulation von Kriegen
+- Akademisch, nicht fuer Echtzeit-Monitoring
 
-| Quelle | URL | Format | Daten | Limit |
-|--------|-----|--------|-------|-------|
-| GDELT DOC API v2 | api.gdeltproject.org/api/v2/doc/doc | JSON | Nachrichtenartikel, Sentiment, GKG Themes | Kein offizielles Limit, Fair Use |
-| GDELT GKG Themes | Ueber DOC API mit `theme:` Parameter | JSON | Thematische Artikel (TERROR, WMD, MILITARY, etc.) | Wie oben |
-| adsb.lol /v2/mil | api.adsb.lol/v2/mil | JSON | Alle Militaerflugzeuge weltweit, Echtzeit | Kein Limit, Open Data (ODbL) |
-| adsb.lol /v2/point | api.adsb.lol/v2/point/{lat}/{lon}/{radius} | JSON | Alle Flugzeuge in Radius | Kein offizielles Limit |
-| Reddit RSS | reddit.com/r/{sub}/.rss | Atom/XML | Oeffentliche Subreddit-Posts | Rate-limited, Fair Use |
-| Polymarket Gamma API | gamma-api.polymarket.com/events | JSON | Prediction Markets, Odds, Volume | Kein offizielles Limit |
-| defense.gov RSS | defense.gov/DesktopModules/.../Rss.aspx | RSS/XML | Pentagon Pressemitteilungen, Contracts, Releases | Oeffentlich |
-| centcom.mil | centcom.mil/MEDIA/PRESS-RELEASES/ | HTML | CENTCOM Pressemitteilungen | Scraping noetig |
-| ACLED | api.acleddata.com | JSON | Konfliktereignisse weltweit, Gewaltdaten | Kostenlos fuer Non-Commercial, braucht Account |
+### 5. Weitere Projekte
+- ADS-B-Military-Analytics: Reine ADS-B-Analyse
+- GDELT-GKG Pipeline: Nur GDELT-Datenverarbeitung
+- G-APT-Monitor: APT-Visualisierung
 
-### Quellen die API-Key brauchen (kostenlos registrierbar)
+## Was MERIDIAN bereits besser macht als alle
 
-| Quelle | API-Key | Daten |
-|--------|---------|-------|
-| AlienVault OTX | Ja (kostenlose Registrierung) | 20M+ Threat Indicators/Tag, APT Pulses, IoCs |
-| aisstream.io | Ja (kostenlose Registrierung) | Live AIS Schiffspositionen weltweit |
+- **Autonome Agenten mit Cron**: Kein anderes Projekt hat einen echten Multi-Agent-Loop der im Hintergrund laeuft
+- **Head Analyst Synthese**: Keiner hat einen AI-Agent der alle Quellen konsolidiert
+- **DB-persistente Reports**: World Monitor cached in Redis, wir persistieren in einer echten DB
+- **Agent-Divergenz-Erkennung**: Kein Wettbewerber erkennt wenn Agenten sich widersprechen
 
-### Quellen die NICHT funktionieren
+## Was die Konkurrenz besser macht (und was wir uebernehmen sollten)
 
-| Quelle | Warum nicht |
-|--------|-------------|
-| X/Twitter API | Kein kostenloser Tier mehr seit 2023. Basic $100/Monat |
-| Nitter | Tot / instabil seit 2024 |
-| Shadowserver | Braucht manuelle Verifikation + ist fuer Netzwerk-Betreiber |
-| ACLED | Braucht Account-Beantragung und ist nur non-commercial |
-| OpenShipData | Nur europaeische Binnengewaesser |
+### Von World Monitor lernen
+1. **Country Instability Index (CII)**: Composite Score pro Land -- wir haben nur einen globalen Tension Index
+2. **Temporal Baseline Anomaly Detection**: Welford's Algorithm mit 90-Tage-Fenster statt fester Schwellwerte
+3. **Focal Point / Convergence Detection**: Wenn mehrere Signaltypen im selben geografischen Gebiet spiken
+4. **3D Globe mit deck.gl**: Deutlich beeindruckender als Leaflet
+5. **35+ togglebare Datenlayer**: Undersea Cables, Pipelines, Nuklearanlagen, Militaerbasen
+6. **Data Freshness Monitoring**: Explizite Luecken-Erkennung wenn eine Quelle ausfaellt
 
-## Der neue Plan: 7 spezialisierte Agenten + 1 Head Analyst
+### Von Delta Intelligence lernen
+1. **Wikipedia Crisis Correlation**: Echtzeit-Pageview-Spikes auf Krisenartikeln (kostenlos, Wikimedia API)
+2. **Pentagon Pizza Tracker (PizzINT)**: Die haben es tatsaechlich gebaut
+3. **Safe-Haven Currency Flows**: CHF/USD und JPY/USD als Risiko-Proxy
+4. **Signal-Normalisierung 0-100**: Einheitliche Skala fuer alle Signale
+5. **Trend-Pfeile**: Einfache Visualisierung von Richtungsaenderungen
 
-### Architektur
+## Der Verbesserungsplan: MERIDIAN v3
 
-```text
-Cron-Scheduler (pg_cron)
-    |
-    +-- Minute 0:  agent-flights     (adsb.lol, alle 10 Min)
-    +-- Minute 2:  agent-naval       (Militaer-DB + AIS, alle 15 Min)
-    +-- Minute 5:  agent-osint       (GDELT 3 Streams + GKG Themes, alle 20 Min)
-    +-- Minute 8:  agent-reddit      (Reddit RSS, alle 30 Min)
-    +-- Minute 10: agent-pentagon    (defense.gov RSS + CENTCOM, alle 60 Min)
-    +-- Minute 12: agent-cyber       (GDELT Cyber + OTX wenn Key, alle 30 Min)
-    +-- Minute 15: agent-markets     (Polymarket, alle 15 Min)
-    +-- Minute 20: agent-head-analyst (Synthese ALLER Reports, alle 30 Min)
-    |
-    v
-  [agent_reports Tabelle]
-    |
-    v
-  Frontend liest aus DB (kein direkter API-Call mehr noetig)
-```
+### Phase 1: Neue Datenquellen (3 neue Agenten)
 
-### Agent 1: FLIGHT AGENT (`agent-flights`)
-**Frequenz:** Alle 10 Minuten
-**Datenquellen:**
-- `api.adsb.lol/v2/mil` -- alle Militaerflugzeuge weltweit
-- Filterung auf CENTCOM AOR (lat 20-35, lon 44-65) + Red Sea (lat 11-20, lon 38-45)
+**Agent 9: WIKI CRISIS Agent (`agent-wiki`)**
+- Wikimedia Pageview API (kostenlos, kein Key): `wikimedia.org/api/rest_v1/metrics/pageviews`
+- Monitort Artikel wie "Strait of Hormuz", "Iran-United States relations", "IRGC", "USS Eisenhower"
+- Erkennt Pageview-Spikes vs. 7-Tage-Baseline
+- Rein algorithmisch, kein AI noetig
 
-**Was er tut:**
-1. Fetcht alle Mil-Tracks von adsb.lol
-2. Filtert auf CENTCOM-Region
-3. Kategorisiert: ISR/Surveillance (E-3, RC-135, P-8, RQ-4), Tanker (KC-135, KC-10), Fighter (F-18, F-15, F-35), Transport (C-17, C-130), Heli (MH-60, CH-47)
-4. Erkennt Anomalien: ISR-Orbits (kreisende Muster), ungewoehnlich hohe Aktivitaet, neue Flugzeugtypen
-5. Berechnet Flight Anomaly Index (0-100)
-6. Schreibt in `agent_reports`
+**Agent 10: FOREX/MACRO Agent (`agent-macro`)**
+- Yahoo Finance (kostenlos): CHF/USD, JPY/USD, Gold, Oil, VIX
+- Erkennt Safe-Haven-Flows und Risikoabneigung
+- Berechnet Macro Risk Index
+- Rein algorithmisch
 
-**Kein AI noetig** -- rein algorithmisch basierend auf Patterns.
+**Agent 11: SATELLITE/FIRE Agent (`agent-fires`)**
+- NASA FIRMS API (kostenlos): Satellitenbasierte Feuer-/Explosionserkennung
+- USGS Earthquake API (kostenlos): Seismische Aktivitaet in der Region
+- Erkennt ungewoehnliche Hitzesignaturen nahe Militaerinstallationen
+- Rein algorithmisch
 
-### Agent 2: NAVAL AGENT (`agent-naval`)
-**Frequenz:** Alle 15 Minuten
-**Datenquellen:**
-- Kuratierte Militaerschiff-Datenbank (21 Schiffe, bereits in ais-proxy)
-- aisstream.io WebSocket (wenn AISSTREAM_API_KEY vorhanden)
+### Phase 2: Smarte Anomalie-Erkennung
 
-**Was er tut:**
-1. Laedt Militaerschiff-Positionen (mit realistischem Drift basierend auf Kurs/Geschwindigkeit)
-2. Wenn API-Key: sammelt Live-Handelschiffe aus aisstream.io (4 Sek WebSocket)
-3. Berechnet Maritime Anomaly Index:
-   - AIS-Gaps (Schiffe die ploetzlich verschwinden)
-   - Ungewoehnliche Formationen (Kriegsschiffe nahe beieinander)
-   - Tanker-Stau an Hormuz
-4. Schreibt kombinierte Vessel-Daten + Anomaly-Report in `agent_reports`
+**Temporal Baseline System**
+- Jeder Agent speichert historische Daten in einer neuen `agent_baselines` Tabelle
+- Welford's Online-Algorithmus berechnet rolling Mean/Variance pro Agent, Wochentag, Stunde
+- Z-Score-Schwellwerte (1.5 = erhoehte Aktivitaet, 2.0 = Warnung, 3.0 = ALERT)
+- Statt "72 Flight Anomaly" sagt das System: "Militaerflugverkehr 2.8x ueber Donnerstag-Baseline"
 
-**Kein AI noetig** -- algorithmisch.
+**Convergence Detection**
+- Wenn 3+ Agenten gleichzeitig erhoehte Werte melden: automatischer CONVERGENCE ALERT
+- Gewichtete Korrelation: Flights + Naval + OSINT = hoechste Konvergenz-Stufe
+- Head Analyst bekommt Convergence Score als zusaetzlichen Input
 
-### Agent 3: OSINT AGENT (`agent-osint`)
-**Frequenz:** Alle 20 Minuten
-**Datenquellen (alle kostenlos, kein API-Key):**
-- GDELT DOC API Stream 1: `(iran OR hormuz OR "persian gulf" OR IRGC OR houthi)` -- 15 Artikel
-- GDELT DOC API Stream 2: `("US military" OR CENTCOM OR deployment OR "5th fleet")` -- 12 Artikel
-- GDELT DOC API Stream 3: `(theme:WMD OR theme:MILITARY OR theme:TERROR) AND (iran OR gulf)` -- 10 Artikel (GKG Theme-basiert)
-- GDELT DOC API Stream 4: `("nuclear" OR "uranium enrichment" OR IAEA) AND iran` -- 8 Artikel
+### Phase 3: Country-Level Intelligence
 
-**Was er tut:**
-1. Fetcht 4 GDELT-Streams parallel
-2. Dedupliziert nach URL
-3. AI analysiert alle Artikel: Priority, Threat-Tag, Entities, Sentiment, Confidence
-4. Erstellt Flash Report
-5. Speichert in `agent_reports` UND `intel_snapshots` (Backward Compatibility)
+**Country Instability Index (CII)**
+- Pro-Land Score (0-100) basierend auf allen Agenten-Daten die das Land betreffen
+- Gewichtete Signale: OSINT-Artikel, Militaeraktivitaet, Markt-Odds, Reddit-Sentiment
+- Laender: Iran, Israel, Saudi-Arabien, UAE, Yemen, Iraq, Qatar, Bahrain, Oman, Kuwait
+- Trend-Erkennung: 24h, 7d, 30d Vergleich
 
-**AI-Modell:** google/gemini-2.5-flash-lite (schnellstes, guenstigstes)
+### Phase 4: Frontend-Upgrade
 
-### Agent 4: REDDIT AGENT (`agent-reddit`)
-**Frequenz:** Alle 30 Minuten
-**Datenquellen (kostenlos, kein API-Key):**
-- r/geopolitics RSS (Suche: iran)
-- r/worldnews RSS (Suche: iran OR hormuz OR persian gulf)
-- r/CredibleDefense RSS (Suche: iran OR gulf OR CENTCOM)
-- r/OSINT RSS (Suche: iran OR military)
-- r/iran RSS (allgemein)
+**Dashboard Verbesserungen**
+- Agent Status Panel: Echtzeit-Status jedes Agenten (letzter Lauf, Threat Level, Items, Latenz)
+- Convergence Alerts: Prominente Anzeige wenn mehrere Agenten gleichzeitig eskalieren
+- Signal Timeline: Zeitliche Darstellung aller Agenten-Berichte der letzten 24h
+- Data Freshness Indicator: Warnung wenn ein Agent nicht mehr berichtet
+- Country Drill-Down: Klick auf ein Land zeigt alle relevanten Signale
 
-**Was er tut:**
-1. Fetcht RSS-Feeds mit Retry + Rate-Limit-Respekt
-2. Parsed Atom-XML (kein externer Parser noetig)
-3. AI filtert relevante Posts, bewertet Signalqualitaet
-4. Speichert in `agent_reports`
+## Technische Umsetzung
 
-**AI-Modell:** google/gemini-2.5-flash-lite
-
-### Agent 5: PENTAGON AGENT (`agent-pentagon`)
-**Frequenz:** Alle 60 Minuten
-**Datenquellen (alle kostenlos, kein API-Key):**
-- defense.gov Contracts RSS: `https://www.defense.gov/DesktopModules/ArticleCS/RSS.aspx?ContentType=400&Site=945`
-- defense.gov Releases RSS: `https://www.defense.gov/DesktopModules/ArticleCS/RSS.aspx?ContentType=1&Site=945`
-- defense.gov Advisories RSS: `https://www.defense.gov/DesktopModules/ArticleCS/RSS.aspx?ContentType=9&Site=945`
-- CENTCOM Press Releases: GDELT DOC API mit `domain:centcom.mil` Filter
-
-**Was er tut:**
-1. Fetcht alle Pentagon RSS-Feeds parallel
-2. Parsed RSS-XML
-3. Filtert auf Iran/Gulf/CENTCOM-relevante Eintraege
-4. AI analysiert: Contract-Anomalien (grosse Navy-Auftraege, Munitionsbestellungen), ungewoehnliche Presseerklaerungen, Aktivitaetsniveau
-5. Berechnet Pentagon Activity Index (0-100)
-6. Speichert in `agent_reports`
-
-**Zur "Pizza-Metrik":** Die echte Pentagon-Pizza-Korrelation ist historisch real (erhoehte Pizzalieferungen = Krisenstab tagt nachts), aber es gibt keine freie API um das zu tracken. Stattdessen nutzen wir als Proxy: Haeufigkeit/Zeitpunkt von Pentagon-Pressemitteilungen (naechtliche Releases = erhoehte Aktivitaet).
-
-**AI-Modell:** google/gemini-2.5-flash-lite
-
-### Agent 6: CYBER AGENT (`agent-cyber`)
-**Frequenz:** Alle 30 Minuten
-**Datenquellen:**
-- GDELT DOC API Cyber-Stream: `("cyber attack" OR APT OR ransomware OR "critical infrastructure" OR "power grid") AND (iran OR gulf OR "middle east")`
-- GDELT DOC API Cyber-Stream 2: `("APT33" OR "APT34" OR "APT35" OR "Charming Kitten" OR "MuddyWater" OR "OilRig")` -- bekannte iranische APT-Gruppen
-- AlienVault OTX Pulses API: `https://otx.alienvault.com/api/v1/pulses/subscribed?modified_since=...` (wenn OTX_API_KEY vorhanden)
-
-**Was er tut:**
-1. GDELT Cyber-Artikel fetchen (immer verfuegbar)
-2. Wenn OTX_API_KEY: Aktive Threat Pulses mit Iran/Gulf-Bezug laden
-3. AI bewertet: Aktive APT-Kampagnen, Cyber Threat Level, kritische Infrastruktur-Bedrohungen
-4. Speichert in `agent_reports`
-
-**AI-Modell:** google/gemini-2.5-flash-lite
-
-### Agent 7: MARKETS AGENT (`agent-markets`)
-**Frequenz:** Alle 15 Minuten
-**Datenquellen (kostenlos, kein API-Key):**
-- Polymarket Gamma API: Events mit Tag "iran", "middle-east"
-- Polymarket Gamma API: Keyword-Suche fuer "iran", "war", "military conflict", "nuclear"
-- Bekannte Slug-Liste (bereits implementiert)
-
-**Was er tut:**
-1. Fetcht Iran-bezogene Markets (bestehende Logik aus prediction-markets)
-2. Vergleicht aktuelle Odds mit letztem Snapshot (Trend-Erkennung)
-3. Erkennt signifikante Preisbewegungen (>5% in 15 Min)
-4. Speichert in `agent_reports` UND `market_snapshots`
-
-**Kein AI noetig** -- rein algorithmisch.
-
-### Agent 8: HEAD ANALYST (`agent-head-analyst`)
-**Frequenz:** Alle 30 Minuten (nachdem andere Agenten gelaufen sind)
-**Datenquellen:**
-- Alle `agent_reports` der letzten 60 Minuten aus der DB
-- Letzte `threat_assessments` fuer Trend-Vergleich
-
-**Was er tut:**
-1. Laedt Reports aller 7 Agenten aus der DB
-2. Erstellt umfassenden Kontext fuer AI:
-   - Flight Anomaly Index + aktive ISR-Orbits
-   - Maritime Anomaly Index + Schiffspositionen
-   - OSINT Sentiment + Top-Artikel
-   - Reddit Social Signals
-   - Pentagon Activity Index
-   - Cyber Threat Level + aktive APTs
-   - Market Odds + Preisbewegungen
-3. AI berechnet:
-   - Gesamt-Tension-Index (0-100)
-   - WATCHCON Level (1-5)
-   - Einzelwahrscheinlichkeiten (Hormuz, Cyber, Proxy, Direct)
-   - FLASH REPORT (5 Saetze)
-   - Divergenzen (AI-Bewertung vs. Polymarket-Odds)
-   - Agenten-Konflikte (wenn Agenten sich widersprechen)
-4. Speichert in `threat_assessments` UND `intel_snapshots`
-
-**AI-Modell:** google/gemini-2.5-flash (staerker als lite, fuer Synthese)
-
-## Datenbank-Aenderungen
-
-### Neue Tabelle: `agent_reports`
+### Neue DB-Tabellen
 
 ```text
-agent_reports
-  - id: uuid (PK, default gen_random_uuid())
-  - created_at: timestamptz (default now())
-  - agent_name: text NOT NULL (z.B. "flights", "naval", "osint", "reddit", "pentagon", "cyber", "markets", "head-analyst")
-  - report_type: text NOT NULL ("cycle" | "alert")
-  - data: jsonb NOT NULL (Agent-spezifische Daten)
-  - summary: text (1-Absatz Zusammenfassung)
-  - threat_level: numeric (0-100)
-  - confidence: text ("HIGH" | "MEDIUM" | "LOW")
-  - items_count: integer DEFAULT 0
+agent_baselines
+  - id: uuid
+  - agent_name: text
+  - metric_name: text (z.B. "flight_count", "article_count")
+  - day_of_week: int (0-6)
+  - hour_of_day: int (0-23)
+  - mean: numeric
+  - variance: numeric
+  - count: integer
+  - updated_at: timestamptz
+
+country_scores
+  - id: uuid
+  - created_at: timestamptz
+  - country_code: text (ISO 3166)
+  - country_name: text
+  - cii_score: numeric (0-100)
+  - signal_breakdown: jsonb
+  - trend_24h: numeric
+  - trend_7d: numeric
 ```
 
-RLS: Public read (wie bestehende Tabellen), Service-Role write (Agenten schreiben mit Service Role Key).
+### Neue Edge Functions
 
-Realtime aktiviert fuer Live-Updates im Frontend.
+| Funktion | Typ | Frequenz |
+|----------|-----|----------|
+| `agent-wiki` | Algorithmisch | Alle 30 Min |
+| `agent-macro` | Algorithmisch | Alle 15 Min |
+| `agent-fires` | Algorithmisch | Alle 30 Min |
 
-### Bestehende Tabellen bleiben
-- `intel_snapshots` -- weiterhin beschrieben von OSINT + Head Analyst
-- `market_snapshots` -- weiterhin beschrieben von Markets Agent
-- `threat_assessments` -- weiterhin beschrieben von Head Analyst
+### Aenderungen an bestehenden Agenten
 
-## Frontend-Aenderungen
+- Alle Agenten schreiben zusaetzlich Baseline-Daten in `agent_baselines`
+- Head Analyst bekommt Convergence Score und CII als zusaetzliche Inputs
+- Head Analyst berechnet und speichert Country Scores
 
-### Dashboard.tsx
-- Statt `live-intel` und `reddit-intel` direkt aufzurufen, laedt das Dashboard aus der DB (`agent_reports`, `intel_snapshots`, `market_snapshots`)
-- Realtime-Subscription auf `agent_reports` fuer Live-Updates
-- Data Ticker zeigt Status jedes Agenten (letzte Laufzeit, Threat Level)
-- Agenten laufen im Hintergrund via Cron -- Frontend ist nur noch Viewer
+### Frontend-Aenderungen
 
-### ThreatEngine.tsx
-- Liest direkt aus `threat_assessments` (letzte Head Analyst Bewertung)
-- Kein eigener API-Call mehr an `threat-engine` noetig
-- Zeigt Agent-Divergenzen und Konflikte an
+| Datei | Aenderung |
+|-------|-----------|
+| `Dashboard.tsx` | Agent Status Panel, Convergence Alerts, Data Freshness |
+| `ThreatEngine.tsx` | Country Drill-Down, Baseline-Vergleich |
+| Neues Component: `AgentStatusPanel.tsx` | Echtzeit-Status aller Agenten |
+| Neues Component: `ConvergenceAlert.tsx` | Konvergenz-Warnungen |
+| Neues Component: `CountryBrief.tsx` | Laender-Dossier |
+| Neues Component: `SignalTimeline.tsx` | 24h Zeitlinie aller Signale |
 
-## Cron-Jobs (pg_cron + pg_net)
+### Implementierungsreihenfolge
 
-Gestaffelte Ausfuehrung um die Edge Functions nicht zu ueberlasten:
+1. `agent_baselines` + `country_scores` Tabellen erstellen
+2. `agent-wiki` implementieren (Wikipedia Pageviews, einfachster neuer Agent)
+3. `agent-macro` implementieren (Yahoo Finance Forex/Commodities)
+4. `agent-fires` implementieren (NASA FIRMS + USGS)
+5. Baseline-System in alle bestehenden Agenten einbauen
+6. Head Analyst erweitern: Convergence Detection + CII
+7. Frontend: Agent Status Panel + Convergence Alerts
+8. Frontend: Country Brief + Signal Timeline
 
-```text
-*/10 * * * *  -> agent-flights       (alle 10 Min)
-2-59/15 * * * * -> agent-naval       (alle 15 Min, Offset 2)
-4-59/20 * * * * -> agent-osint       (alle 20 Min, Offset 4)
-8-59/30 * * * * -> agent-reddit      (alle 30 Min, Offset 8)
-10 * * * *    -> agent-pentagon      (jede Stunde, Minute 10)
-12-59/30 * * * * -> agent-cyber      (alle 30 Min, Offset 12)
-5-59/15 * * * * -> agent-markets     (alle 15 Min, Offset 5)
-20-59/30 * * * * -> agent-head-analyst (alle 30 Min, Offset 20)
-```
+### Was MERIDIAN dann einzigartig macht
 
-## Dateien die erstellt/geaendert werden
+| Feature | World Monitor | Delta Intel | GeoSentinel | MERIDIAN v3 |
+|---------|--------------|-------------|-------------|-------------|
+| Autonome Agenten | Nein | Nein | Nein | 11 Agenten |
+| Head Analyst AI | Nein | Nein | Nein | Ja |
+| Baseline Anomaly Detection | Ja (Welford) | Nein | Nein | Ja (Welford) |
+| Convergence Detection | Ja | Nein | Nein | Ja + AI |
+| Country Instability Index | Ja (22 Laender) | Nein | Nein | Ja (10 Laender, Gulf-fokussiert) |
+| Wikipedia Crisis | Nein | Ja | Nein | Ja |
+| Pentagon Pizza Proxy | Nein | Ja (PizzINT) | Nein | Ja (Nachtaktivitaet) |
+| Safe-Haven Flows | Nein | Ja | Nein | Ja |
+| Prediction Markets | Ja (Polymarket) | Ja (Poly + Kalshi) | Nein | Ja (Polymarket) |
+| Agent Divergences | Nein | Nein | Nein | Ja |
+| Persistente DB | Redis-Cache | Nein | Nein | PostgreSQL |
+| NASA Fires/USGS | Ja | Ja (EONET) | Nein | Ja (FIRMS) |
+| Cyber/APT Tracking | Ja (IOCs) | Nein | Nein | Ja (GDELT + OTX) |
+| ADS-B Mil Tracking | Ja | Ja (OpenSky) | Ja | Ja (adsb.lol) |
+| AIS Naval Tracking | Ja | Nein | Ja | Ja |
+| Dark Web | Nein | Nein | Ja (TOR) | Nein |
+| 3D Globe | Ja (deck.gl) | Ja (MapLibre) | Ja | Nein (Leaflet 2D) |
 
-| Datei | Aktion |
-|-------|--------|
-| `supabase/functions/agent-flights/index.ts` | NEU |
-| `supabase/functions/agent-naval/index.ts` | NEU (uebernimmt Logik aus ais-proxy) |
-| `supabase/functions/agent-osint/index.ts` | NEU (uebernimmt + erweitert live-intel) |
-| `supabase/functions/agent-reddit/index.ts` | NEU (uebernimmt + erweitert reddit-intel) |
-| `supabase/functions/agent-pentagon/index.ts` | NEU |
-| `supabase/functions/agent-cyber/index.ts` | NEU |
-| `supabase/functions/agent-markets/index.ts` | NEU (uebernimmt prediction-markets Logik) |
-| `supabase/functions/agent-head-analyst/index.ts` | NEU |
-| DB Migration | NEU: `agent_reports` Tabelle + Realtime |
-| `supabase/config.toml` | Update: alle neuen Functions registrieren (verify_jwt = false) |
-| `src/components/dashboard/Dashboard.tsx` | Umbauen: DB-basiertes Laden + Realtime |
-| `src/components/dashboard/ThreatEngine.tsx` | Umbauen: Liest aus DB statt API-Call |
-
-Alte Edge Functions (`live-intel`, `reddit-intel`, `prediction-markets`, `intel-agent`) bleiben vorerst erhalten fuer Backward Compatibility, werden aber nicht mehr vom Frontend aufgerufen.
-
-## Voraussetzungen / Secrets
-
-| Secret | Wofuer | Pflicht? | Status |
-|--------|--------|----------|--------|
-| LOVABLE_API_KEY | AI-Analysen in 4 Agenten | Ja | Bereits vorhanden |
-| SUPABASE_URL | DB-Zugriff | Ja | Bereits vorhanden |
-| SUPABASE_SERVICE_ROLE_KEY | DB-Schreibzugriff | Ja | Bereits vorhanden |
-| AISSTREAM_API_KEY | Live-AIS Handelschiffe | Nein | Optional |
-| OTX_API_KEY | AlienVault Cyber Threat Intel | Nein | Optional (kostenlose Registrierung) |
-
-Alle Agenten funktionieren ohne optionale Keys -- sie nutzen dann nur die kostenlosen Quellen.
-
-## Implementierungsreihenfolge
-
-1. DB-Migration: `agent_reports` Tabelle + RLS + Realtime
-2. Agent-flights + Agent-naval (kein AI, schnell testbar)
-3. Agent-osint + Agent-reddit (AI-basiert, basieren auf bestehender Logik)
-4. Agent-pentagon + Agent-cyber (neue Quellen)
-5. Agent-markets (Polymarket, basiert auf bestehender Logik)
-6. Agent-head-analyst (Synthese)
-7. Frontend umbauen (DB-basiert + Realtime)
-8. Cron-Jobs einrichten
-9. Alte Functions aufraeuemen
+MERIDIAN v3 waere das einzige System mit einem autonomen Multi-Agent-Intelligence-Loop, Baseline-Anomalie-Erkennung UND AI-gesteuerter Synthese -- alles serverless und persistent.
 
