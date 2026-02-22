@@ -1,292 +1,188 @@
 
-# Tiefenanalyse: Was auf GitHub existiert und wie MERIDIAN v3 sie alle schlagen kann
+# MERIDIAN: Iran/US-Konflikt Aktualisierung
 
-## 1. Die Wettbewerbslandschaft im Detail
+## Aktueller Kontext (22. Februar 2026)
 
-### Tier 1: World Monitor (9.3k Stars) -- Der Goldstandard
+Die Lage ist HEUTE extrem aktuell:
+- **Reuters**: "US and Iran slide towards conflict as military buildup eclipses talks"
+- **Al Jazeera**: US groesster Militaeraufmarsch im Nahen Osten seit der Irak-Invasion
+- **Trump**: Iran hat "10-15 Tage" fuer einen Deal (Nuklear + Raketen)
+- **Pezeshkian**: "Iran wird sich nicht beugen"
+- **Larijani**: Uebernimmt Kriegsvorbereitungen laut Berichten
+- **2 Traegergruppen + 14 Kriegsschiffe** im Einsatzgebiet
+- **Operation Midnight Hammer** war erst vor 8 Monaten
 
-World Monitor ist mit Abstand das fortschrittlichste Open-Source-Projekt in diesem Bereich. Hier ist was sie haben, das MERIDIAN nicht hat:
+## Was aktualisiert werden muss
 
-**Signalverarbeitung (was World Monitor besser macht):**
-- 12 verschiedene Signal-Typen mit praezisen Triggern (Convergence, Triangulation, Velocity Spike, Prediction Leading, Silent Divergence, Flow-Price Divergence, Geographic Convergence, Hotspot Escalation, Military Surge, News Leads Markets, Market Move Explained, Sector Cascade)
-- Entity-Aware Correlation mit 600+ Entity Registry (Firmen, Laender, Leaders, Organisationen, Commodities) -- jede Entitaet mit Aliases, Keywords, Sector, Related entities
-- Jaccard-Similarity News Clustering mit Inverted Index (O(n) statt O(n^2))
-- Signal Deduplication mit TTL pro Signal-Typ (6h fuer Market Signals, 30min fuer News)
-- Source Tiering (4 Stufen) + Source Type Classification (Wire, Gov, Intel, Mainstream, Market, Tech)
-- Propaganda Risk Indicators fuer State Media
+### 1. Keywords und Entities -- VERALTET
 
-**Country Instability Index (CII) -- ihre beste Innovation:**
-- 3-Komponenten Score: Unrest (40%, ACLED+GDELT), Security (30%, Flights+Vessels), Information (30%, News Velocity)
-- Scoring Bias Prevention: Log-Dampening fuer high-volume Laender (US bekommt nicht automatisch hohe Scores wegen viel Berichterstattung)
-- Conflict Zone Floor Scores (Ukraine mindestens 55, Syria mindestens 50)
-- Contextual Score Boosts (Hotspot +10, News Urgency +5, Focal Point +8)
-- 20 Laender mit 15-Minuten Learning Mode Warmup
-- Server-Side Pre-Computation via /api/risk-scores
+Mehrere Agenten haben veraltete oder unvollstaendige Keyword-Listen fuer den aktuellen Konflikt:
 
-**Geographic Convergence Detection:**
-- 1-Grad x 1-Grad Grid ueber die gesamte Erde
-- 4 Event-Typen: Protests (ACLED/GDELT), Military Flights (OpenSky), Naval Vessels (AIS), Earthquakes (USGS)
-- Scoring: type_score = event_types x 25, count_boost = min(25, total_events x 2)
-- Alert wenn 3+ verschiedene Event-Typen in derselben Zelle innerhalb 24h
+**Fehlende Schluessel-Begriffe in allen Agenten:**
+- "Pezeshkian" (Iran-Praesident -- fehlt ueberall ausser agent-markets)
+- "Larijani" (Kriegsvorbereitungen -- fehlt ueberall)
+- "Midnight Hammer" / "Operation Midnight Hammer" (US-Angriff Juni 2025)
+- "Trump" als Iran-bezogener Keyword
+- "nuclear deal" / "nuclear talks" / "JCPOA"
+- "USS Abraham Lincoln" (2. Traegergruppe aktuell im Einsatz -- fehlt in Naval)
+- "USS Harry S. Truman" (war kuerzlich im Einsatz)
+- "B-2 Spirit" Bomber (im Einsatz laut CSIS)
+- "Al Udeid" (groesste US-Basis, fehlt in einigen Agenten)
+- "Diego Garcia" (B-2 Basis)
+- "Fordow" (unterirdische Urananreicherung)
+- "Arak" (Schwerwasserreaktor)
+- "Parchin" (Militaerkomplex)
+- "ballistic missile" / "MRBM" / "Emad" / "Sejjil"
 
-**Infrastructure Cascade Analysis:**
-- 279 Infrastruktur-Nodes + 280 Dependency Edges
-- Breadth-first Cascade Propagation mit Redundanz-Modelling
-- Undersea Cable Activity Monitoring via NGA Maritime Warnings
-- Dark Ship Detection (AIS Gaps > 60min)
+### 2. Naval Agent -- HARDCODED VESSELS VERALTET
 
-**Hotspot Escalation (Multi-Component):**
-- 4 gewichtete Komponenten: News 35%, CII 25%, Geo Convergence 25%, Military 15%
-- 48-Punkt Historie (24h bei 30min Intervallen) mit Linear Regression fuer Trend
+Der Naval Agent hat **20 hardcoded Schiffe** die teilweise nicht mehr aktuell sind:
+- USS Eisenhower (CVN-69) ist hardcoded -- moeglicherweise nicht mehr im Einsatz
+- USS Abraham Lincoln (CVN-72) fehlt als aktives Traegergruppe
+- Es fehlen: USS Bataan ARG details, Submarine SSGNs
+- Keine Aktualisierung der iranischen Flottenaufstellung
 
-**Pentagon Pizza Index (PizzINT):**
-- Foot traffic Daten von Restaurants nahe Pentagon, CIA, NSA, State Dept
-- DEFCON-Style 5-stufiges Alerting (COCKED PISTOL bis FADE OUT)
-- GDELT Tension Pairs (USA-Russia, USA-China, Israel-Iran, etc.)
+### 3. Wikipedia Watch Articles -- LUECKEN
 
-**Architektur-Vorteil:**
-- Desktop App (Tauri) mit OS-Keychain
-- 4-stufige LLM Fallback-Kette (OpenAI, Anthropic, Ollama, LM Studio)
-- 80+ kuratierte Nachrichtenquellen
-- WebSocket AIS Relay ueber Railway
-- IndexedDB fuer Client-Side Baseline Storage
+`agent-wiki` monitort 15 Artikel, aber es fehlen:
+- "2026 Iran-United States crisis" (neuer Wikipedia-Artikel zur aktuellen Lage)
+- "Operation Midnight Hammer" (US-Angriff Juni 2025)
+- "Masoud Pezeshkian" (Iran-Praesident)
+- "Ali Larijani" (Kriegsvorbereitungen)
+- "Iran nuclear deal framework" / "Joint Comprehensive Plan of Action"
+- "Fordow Fuel Enrichment Plant"
+- "Natanz" (existiert bereits)
+- "Iran ballistic missile program"
 
-### Tier 2: OpenCTI (7k+ Stars) -- Enterprise Cyber Threat Intelligence
+### 4. Polymarket Slugs -- TEILWEISE VERALTET
 
-- STIX2-konformes Datenmodell
-- ElasticSearch-basierte Suche
-- 100+ Konnektoren (MISP, VirusTotal, AlienVault, etc.)
-- Knowledge Graph Visualisierung
-- Playbook Automation
-- Nicht vergleichbar mit MERIDIAN (anderes Segment: Cyber IOCs vs. Geopolitik)
+`agent-markets` hat 11 hardcoded Slugs -- einige davon moeglicherweise abgelaufen (Maerz 2025 Deadlines). Fehlende aktuelle Maerkte:
+- US strikes on Iran nuclear sites 2026
+- Iran nuclear weapon by end of 2026
+- US-Iran war 2026
+- Strait of Hormuz closure 2026
+- Iran regime change 2026
 
-### Tier 3: IntelOwl (3k+ Stars) -- IOC Analyse
+### 5. OSINT Queries -- GUT ABER ERWEITERBAR
 
-- 150+ Analyzer fuer IOCs (Hashes, IPs, Domains)
-- Connectors zu VirusTotal, OTX, Shodan
-- API-first Design
-- Ebenfalls anderes Segment: IOC-Analyse, nicht Geopolitik
+`agent-osint` hat 4 GDELT-Streams die gut sind, aber es fehlt:
+- Ein dedizierter "Pezeshkian OR Larijani OR nuclear talks" Stream
+- "Operation Midnight Hammer" als historischer Kontext
 
-### Tier 4: Spezialisierte Tools
+### 6. Fires Agent -- STRATEGISCHE SITES UNVOLLSTAENDIG
 
-- **AISight** (neu): Vercel-basiertes AIS Vessel Tracking
-- **AIS_Tracker**: Zivile Schiffe die Militaermissionen durchfuehren
-- **GeoTrackNet**: ML-basierte Maritime Anomaly Detection mit neuronalen Netzen
-- **CrisisCast**: Social Media Crisis Detection mit Big Data Pipeline
-- **WhatHappenedThere**: Wikipedia Traffic Spikes + Breaking News Korrelation
-- **wikiTrends**: Anomaly Detection auf Wikipedia Traffic (akademisch)
-- **Polymarket/agents** (2.2k Stars): Autonome AI Trading Agents fuer Prediction Markets
-- **PredictOS**: All-in-one Framework fuer Prediction Markets
-- **Gnosis/prediction-market-agent**: Gnosis-basierte Prediction Market Agents
+`agent-fires` hat 12 strategische Standorte, aber es fehlen:
+- **Fordow** (unterirdisch, 32.77N, 51.56E) -- DAS Hauptziel
+- **Parchin** (35.52N, 51.77E) -- Militaer/Nuklear
+- **Arak** (34.38N, 49.24E) -- Schwerwasser
+- **Kharg Island** (29.24N, 50.31E) -- 90% von Irans Oelexport
+- **Chabahar Port** (25.30N, 60.64E) -- Iranischer Hafen
+- **Imam Ali Base, Syria** (34.44N, 40.55E) -- Iranische Miliz
+- **Diego Garcia** (7.32S, 72.41E) -- B-2 Basis
 
-### Kostenlose Daten-APIs die niemand voll ausschoepft
+### 7. Head Analyst System Prompt -- NICHT KONTEXTUELL GENUG
 
-| API | Daten | Nutzung im Oekosystem |
-|-----|-------|----------------------|
-| GDELT Stability Dashboard | Instabilitaet/Konflikt pro Land, 15min Updates | World Monitor nutzt es, MERIDIAN nicht |
-| ACLED API | Konflikt-Events global, weoechentlich | World Monitor nutzt es fuer CII |
-| VIEWS Forecasting | Konflikt-Prognosen 3-36 Monate | Niemand nutzt es |
-| Conflictmeter.org | Civil War Risk Scoring | Niemand nutzt es |
-| GDELT GKG Trends | Themen-Trends in Echtzeit | Teilweise genutzt |
-| Wikimedia Pageviews | Pageview-Spikes auf Krisenartikeln | MERIDIAN hat es, World Monitor nicht |
-| NASA FIRMS | Feuer/Explosionen Satellit | MERIDIAN hat es, World Monitor nutzt NASA EONET |
-| USGS Earthquake | Erdbeben global | Beide haben es |
+Der System-Prompt des Head Analyst erwaehnt den Iran/US-Kontext nicht explizit. Er sagt nur "multi-source intelligence fusion center" -- kein Hinweis auf die aktuelle Eskalation.
 
-## 2. MERIDIANs einzigartige Staerken (was NIEMAND hat)
+### 8. Reddit Subreddits -- GUT ABER ERWEITERBAR
 
-| Feature | World Monitor | OpenCTI | IntelOwl | MERIDIAN |
-|---------|--------------|---------|----------|----------|
-| **Autonome Cron-Agenten** | Nein (client-polling) | Connectors (manuell) | Analyzers (on-demand) | 11 autonome Agenten |
-| **AI Head Analyst Synthese** | AI Insights (single LLM) | Nein | Nein | Multi-Agent zu Head Analyst |
-| **Agent-Divergenz-Erkennung** | Nein | Nein | Nein | Ja (agentConflicts) |
-| **DB-persistente Historie** | IndexedDB (client) | PostgreSQL | PostgreSQL | PostgreSQL (server) |
-| **Serverless Backend** | Vercel + Railway | Docker Compose | Docker | Supabase Edge Functions |
-| **Prediction Market Integration** | Polymarket (display) | Nein | Nein | Polymarket + AI Divergenz-Analyse |
-| **Wikipedia Crisis Correlation** | Nein | Nein | Nein | agent-wiki (mit Baselines) |
-| **Macro Safe-Haven Flows** | Partial (FRED) | Nein | Nein | agent-macro (CHF/USD, Oil, VIX) |
+`agent-reddit` monitort 5 Subreddits, aber es fehlen:
+- r/NCD (NonCredibleDefense -- sehr aktiv bei Militaereskalationen)
+- r/LessCredibleDefence
+- r/MilitaryPorn (fuer Truppenverlegungen)
 
-## 3. Was MERIDIAN fehlt (und was implementiert werden muss)
+### 9. Country Scores -- LEER
 
-### Kritisch (World Monitor hat es, wir nicht)
+`country_scores` hat 0 Eintraege. Der Head Analyst berechnet CII aber hat noch nie gelaufen (AI Credits). Die CII-Laenderliste ist gut (10 Golf-Laender), aber es fehlen:
+- **SY** (Syrien -- iranische Milizen, Imam Ali Base)
+- **LB** (Libanon -- Hezbollah)
+- **US** (fuer Domestic-Stimmung und Militaeraufmarsch)
 
-1. **CII ist leer**: `country_scores` hat 0 Eintraege. Head Analyst berechnet keine CII. Das ist unser groesstes Feature-Gap.
+## Implementierungsplan
 
-2. **Tension History zeigt Mock-Daten**: `MOCK_TENSION_HISTORY` wird in ThreatEngine.tsx benutzt statt echte `threat_assessments` aus der DB.
+### Schritt 1: Keyword-Updates in allen Agenten
 
-3. **Network Graph ist statisch**: `MOCK_NETWORK_NODES/LINKS` statt dynamisch aus agent_reports generiert.
+**agent-osint**: Neuen 5. GDELT-Stream hinzufuegen:
+- `(Pezeshkian OR Larijani OR "nuclear talks" OR "nuclear deal" OR "Midnight Hammer") AND (iran OR US)`
 
-4. **Geographic Convergence fehlt komplett**: Kein 1-Grad Grid, keine Multi-Source Convergence Detection.
+**agent-reddit**: 2 Subreddits hinzufuegen:
+- r/NCD (NonCredibleDefense)
+- r/LessCredibleDefence
 
-5. **News Clustering fehlt**: Keine Jaccard-Similarity, keine Velocity Analysis, keine Source Tiering.
+**agent-wiki**: 8 neue Watch-Artikel:
+- "2026_Iran%E2%80%93United_States_crisis"
+- "Masoud_Pezeshkian"
+- "Ali_Larijani"
+- "Joint_Comprehensive_Plan_of_Action"
+- "Fordow_Fuel_Enrichment_Plant"
+- "Iran_ballistic_missile_program"
+- "2025_strikes_on_Iran" (Operation Midnight Hammer)
+- "Kharg_Island"
 
-6. **Entity Registry fehlt**: Kein Entity-Aware Correlation System.
+**agent-markets**: Keywords erweitern + neue Slugs:
+- Keywords: + "pezeshkian", "larijani", "nuclear deal", "nuclear talks", "midnight hammer", "strike", "war"
+- Slugs: + aktuellere 2026-bezogene Slugs
 
-7. **Signal System fehlt**: Keine 12 Signal-Typen wie World Monitor.
+**agent-pentagon**: Keywords erweitern:
+- + "pezeshkian", "larijani", "nuclear", "midnight hammer", "strike", "armada", "carrier", "b-2", "bomber"
 
-8. **Baseline System unvollstaendig**: Nur agent-wiki schreibt in agent_baselines. Andere 9 Agenten nicht.
+**agent-cyber**: Queries erweitern:
+- + "Shahid Hemmat" (Iran Cyber), "CyberAv3ngers"
 
-### Mittlere Prioritaet
+### Schritt 2: Fires Agent -- Strategische Sites erweitern
 
-9. **Source Bias Prevention fehlt**: Keine Log-Dampening, keine Conflict Zone Floors.
-10. **Infrastructure Cascade fehlt**: Keine Dependency-Graph Analyse.
-11. **Dark Ship Detection fehlt**: Keine AIS Gap Erkennung.
-12. **Pentagon Pizza (PizzINT) fehlt**: Wir haben pentagon agent, aber kein Foot Traffic.
+7 neue Sites hinzufuegen:
+- Fordow, Parchin, Arak, Kharg Island, Chabahar, Imam Ali Base (Syria), Diego Garcia
 
-## 4. Der MERIDIAN v3 Masterplan (priorisiert)
+### Schritt 3: Naval Agent -- Vessel-Liste aktualisieren
 
-### Phase 1: Sofort umsetzbar (dieses Gespraech)
+- USS Abraham Lincoln (CVN-72) hinzufuegen (aktuell 2. Traeger im Einsatz)
+- Positionen basierend auf aktuellen Berichten aktualisieren
+- USS Harry S. Truman ergaenzen
 
-**1a. MOCK_TENSION_HISTORY durch echte DB-Daten ersetzen**
-- ThreatEngine.tsx: `threat_assessments` aus DB laden (letzte 24h, max 12 Punkte)
-- Fallback auf Mock nur wenn DB leer
-- Keine AI Credits noetig
+### Schritt 4: Head Analyst System Prompt aktualisieren
 
-**1b. Head Analyst: CII Berechnung einbauen**
-- Nach Synthese aller Agenten: CII pro Land berechnen
-- Algorithmus basierend auf World Monitor aber vereinfacht:
-  - OSINT-Sentiment pro Land (aus agent-osint Artikeln)
-  - Militaeraktivitaet (aus agent-flights und agent-naval)
-  - Markt-Odds (aus agent-markets)
-  - Wikipedia-Spikes (aus agent-wiki)
-  - Reddit-Signals (aus agent-reddit)
-- In `country_scores` speichern
-- 10 Laender: Iran, Israel, Saudi-Arabien, UAE, Yemen, Iraq, Qatar, Bahrain, Oman, Kuwait
+Den System-Prompt kontextualisieren:
+- Aktueller Iran/US-Konfliktkontext
+- Erwaehnung der 2 Traegergruppen
+- Pezeshkian/Larijani als Schluesselakteure
+- Eskalationsdynamik seit Operation Midnight Hammer
 
-**1c. Alle Agenten: Baseline-Daten schreiben**
-- Welford's Online Algorithmus in jeden Agenten einbauen
-- `agent_baselines` Tabelle fuellen
-- Z-Score Berechnung: (current - mean) / sqrt(variance)
+### Schritt 5: CII-Laenderliste erweitern
 
-**1d. CountryBrief: Echte CII-Daten anzeigen**
-- Aus `country_scores` laden statt Platzhalter
-- Trend-Pfeile (24h Vergleich)
+3 Laender hinzufuegen:
+- SY (Syrien), LB (Libanon), US (fuer Domestic-Dimension)
 
-### Phase 2: Naechste Iteration
+### Schritt 6: Network Graph aktualisieren
 
-**2a. Geographic Convergence Detection**
-- Im Head Analyst: Wenn 3+ Agenten erhoehte Werte in derselben Region melden
-- Convergence Score als Teil der Synthese
-- Neues Frontend-Component: ConvergenceAlert
+Mock-Daten aktualisieren mit aktuellen Akteuren:
+- Pezeshkian (IR Praesident)
+- Larijani (Kriegskoordinator)
+- Trump (POTUS -- bereits vorhanden als "POTUS NCA")
+- USS Abraham Lincoln CSG
+- B-2 Spirit Bomber Squadron
 
-**2b. Tension History Chart mit echten Daten**
-- `threat_assessments` der letzten 7 Tage laden
-- Trend-Linie mit Recharts
+### Schritt 7: Deploy und Test
 
-**2c. Network Graph dynamisch**
-- Aus agent_reports Entitaeten extrahieren
-- Force-directed Graph aus echten Daten generieren
+Alle geaenderten Edge Functions deployen und testen.
 
-### Phase 3: Differenzierung
+## Technische Details
 
-**3a. Entity Registry (vereinfacht)**
-- 50 Kern-Entities: Laender, Militaergruppen, Organisationen, Unternehmen
-- Aliases und Keywords
-- News-Market Korrelation
-
-**3b. Signal System**
-- 6 Signal-Typen (statt World Monitors 12, da wir Agenten haben):
-  - Agent Convergence (3+ Agenten eskalieren gleichzeitig)
-  - Market Divergence (AI vs. Polymarket)
-  - Baseline Anomaly (Z-Score > 2.5)
-  - CII Spike (Land +10 Punkte in 24h)
-  - Wikipedia Crisis (Pageview Spike > 3x)
-  - Macro Risk Alert (Safe-Haven Flows aktiviert)
-
-**3c. Source Tiering**
-- GDELT, Reddit, Pentagon, Wikipedia nach Autoritaet gewichten
-- Head Analyst beruecksichtigt Source Quality
-
-## 5. Technische Umsetzung (Phase 1)
-
-### Aenderungen an bestehenden Dateien
+### Dateien die geaendert werden
 
 | Datei | Aenderung |
 |-------|-----------|
-| `ThreatEngine.tsx` | MOCK_TENSION_HISTORY ersetzen durch DB-Query auf threat_assessments |
-| `agent-head-analyst/index.ts` | CII-Berechnung + country_scores INSERT |
-| `agent-flights/index.ts` | Baseline-Schreibung hinzufuegen |
-| `agent-naval/index.ts` | Baseline-Schreibung hinzufuegen |
-| `agent-osint/index.ts` | Baseline-Schreibung hinzufuegen |
-| `agent-reddit/index.ts` | Baseline-Schreibung hinzufuegen |
-| `agent-pentagon/index.ts` | Baseline-Schreibung hinzufuegen |
-| `agent-cyber/index.ts` | Baseline-Schreibung hinzufuegen |
-| `agent-markets/index.ts` | Baseline-Schreibung hinzufuegen |
-| `agent-macro/index.ts` | Baseline-Schreibung hinzufuegen |
-| `agent-fires/index.ts` | Baseline-Schreibung hinzufuegen |
-| `CountryBrief.tsx` | Echte country_scores laden |
-| `mockData.ts` | MOCK_TENSION_HISTORY als Fallback behalten |
+| `agent-osint/index.ts` | 5. GDELT-Stream hinzufuegen |
+| `agent-reddit/index.ts` | 2 neue Subreddits |
+| `agent-wiki/index.ts` | 8 neue Watch-Artikel |
+| `agent-markets/index.ts` | Keywords + Slugs erweitern |
+| `agent-pentagon/index.ts` | Keywords erweitern |
+| `agent-cyber/index.ts` | Queries erweitern |
+| `agent-fires/index.ts` | 7 neue strategische Sites |
+| `agent-naval/index.ts` | USS Abraham Lincoln + aktuelle Positionen |
+| `agent-head-analyst/index.ts` | System-Prompt + 3 neue CII-Laender |
+| `mockData.ts` | Network Graph Nodes/Links aktualisieren |
+| `CountryBrief.tsx` | 3 neue Laender-Flags (SY, LB, US) |
 
-### Head Analyst CII Algorithmus (vereinfacht)
-
-```text
-Fuer jedes Land in [IR, IL, SA, AE, YE, IQ, QA, BH, OM, KW]:
-
-  osint_score = Anzahl OSINT-Artikel die das Land erwaehnen * 8 (max 30)
-  reddit_score = Anzahl Reddit-Signals mit Land-Bezug * 5 (max 20)
-  military_score = flight_anomaly_near_country * 0.3 (max 25)
-  market_score = relevante_market_probability * 0.2 (max 15)
-  wiki_score = wiki_pageview_spike_ratio * 5 (max 10)
-
-  raw_cii = osint_score + reddit_score + military_score + market_score + wiki_score
-  cii = min(100, raw_cii)
-
-  trend_24h = cii - letzte_cii_vor_24h
-```
-
-### Baseline Welford Algorithmus (fuer alle Agenten)
-
-```text
-// Welford's Online Algorithm fuer streaming mean/variance
-function updateBaseline(agent, metric, value, dayOfWeek, hour):
-  existing = SELECT FROM agent_baselines
-    WHERE agent_name = agent AND metric_name = metric
-    AND day_of_week = dayOfWeek AND hour_of_day = hour
-
-  if existing:
-    count = existing.count + 1
-    delta = value - existing.mean
-    newMean = existing.mean + delta / count
-    delta2 = value - newMean
-    newVariance = existing.variance + delta * delta2
-
-    UPDATE agent_baselines SET
-      mean = newMean,
-      variance = newVariance,
-      count = count
-  else:
-    INSERT INTO agent_baselines
-      (agent, metric, dayOfWeek, hour, mean=value, variance=0, count=1)
-```
-
-### Implementierungsreihenfolge
-
-1. ThreatEngine.tsx: Echte Tension History aus DB
-2. Alle 10 Agenten: Baseline-Schreibung (Welford)
-3. Head Analyst: CII-Berechnung + country_scores
-4. CountryBrief.tsx: Echte Daten anzeigen
-5. Deploy + Test aller Agenten
-
-## 6. Zusammenfassung: Wo MERIDIAN nach Phase 1 steht
-
-```text
-Feature                    | World Monitor | MERIDIAN v3
-Autonome Agenten           | Nein          | 11 Agenten mit Cron
-AI Head Analyst            | Single LLM    | Multi-Agent Synthese
-CII Score                  | 20 Laender    | 10 Laender (Golf-Fokus)
-Baseline Anomaly Detection | IndexedDB     | PostgreSQL (Welford)
-Geographic Convergence     | 1-Grad Grid   | Agent-Level (Phase 2)
-Tension History            | Client-Cache  | DB-persistiert
-Agent Divergences          | Nein          | Ja
-Wiki Crisis Correlation    | Nein          | Ja
-Macro Safe-Haven           | FRED only     | Forex + Commodities
-NASA Fires                 | EONET         | FIRMS (praeziser)
-Prediction Markets         | Display only  | AI Divergenz-Analyse
-Signal System              | 12 Typen      | 6 Typen (Phase 3)
-Entity Registry            | 600+ Entities | Geplant (Phase 3)
-Infrastructure Cascade     | 279 Nodes     | Nicht geplant
-News Clustering            | Jaccard       | Nicht geplant
-Desktop App                | Tauri         | Web-only
-3D Globe                   | deck.gl       | Leaflet 2D
-```
-
-MERIDIAN differenziert sich durch das **autonome Multi-Agent-System** -- kein anderes Projekt hat Agenten die im Hintergrund laufen, Daten sammeln, und dann von einem AI Head Analyst synthetisiert werden. Das ist das Alleinstellungsmerkmal. Phase 1 schliesst die kritischen Luecken (CII, echte Daten, Baselines) und macht das System produktionsreif.
+### Keine neuen Tabellen oder Migrationen noetig
+Alle Aenderungen sind Code-Updates in bestehenden Edge Functions und Frontend-Komponenten.
