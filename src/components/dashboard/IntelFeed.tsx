@@ -9,12 +9,15 @@ interface IntelItem {
   content: string;
   entities: string[];
   sentiment: number;
+  threat_tag?: string;
+  confidence?: string;
 }
 
 interface IntelFeedProps {
   items: IntelItem[];
   loading: boolean;
   onRefresh: () => void;
+  flashReport?: string | null;
 }
 
 const priorityStyles = {
@@ -23,7 +26,21 @@ const priorityStyles = {
   LOW: "text-muted-foreground border-border bg-secondary/30",
 };
 
-const IntelFeed = ({ items = [], loading, onRefresh }: IntelFeedProps) => {
+const tagColors: Record<string, string> = {
+  MARITIME: "text-primary bg-primary/10 border-primary/20",
+  CYBER: "text-purple-400 bg-purple-400/10 border-purple-400/20",
+  DIPLOMATIC: "text-amber bg-amber/10 border-amber/20",
+  MILITARY: "text-crimson bg-crimson/10 border-crimson/20",
+  ECONOMIC: "text-tactical-green bg-tactical-green/10 border-tactical-green/20",
+};
+
+const confidenceColors: Record<string, string> = {
+  HIGH: "text-crimson",
+  MEDIUM: "text-amber",
+  LOW: "text-muted-foreground",
+};
+
+const IntelFeed = ({ items = [], loading, onRefresh, flashReport }: IntelFeedProps) => {
   return (
     <div className="panel-tactical flex flex-col h-full">
       <div className="flex items-center justify-between px-3 py-2 border-b border-panel-border bg-panel-header">
@@ -46,6 +63,24 @@ const IntelFeed = ({ items = [], loading, onRefresh }: IntelFeedProps) => {
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 space-y-2">
+        {/* Flash Report Banner */}
+        {flashReport && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="panel-glass border border-amber/30 rounded-sm p-2.5 mb-2"
+          >
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-[9px] font-mono text-amber animate-pulse-fast px-1.5 py-0.5 border border-amber/40 rounded-sm bg-amber/10">
+                ⚡ FLASH REPORT
+              </span>
+            </div>
+            <p className="text-[10px] text-foreground/80 leading-relaxed font-mono">
+              {flashReport}
+            </p>
+          </motion.div>
+        )}
+
         {loading && items.length === 0 && (
           <div className="space-y-2 p-1">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -69,19 +104,36 @@ const IntelFeed = ({ items = [], loading, onRefresh }: IntelFeedProps) => {
             key={item.id}
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: i * 0.05 }}
-            className="border border-panel-border rounded-sm bg-background/50 p-2.5 hover:border-primary/30 transition-colors"
+            transition={{ delay: i * 0.03 }}
+            className={`border rounded-sm bg-background/50 p-2.5 transition-all hover:border-primary/30 ${
+              item.priority === "HIGH" ? "border-crimson/20 hover:border-crimson/40 hover:glow-crimson" : "border-panel-border"
+            }`}
           >
             <div className="flex items-center justify-between mb-1.5">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded-sm border ${priorityStyles[item.priority]}`}>
                   {item.priority}
                 </span>
-                <span className="text-[10px] text-primary/70 font-mono">{item.source}</span>
+                {item.priority === "HIGH" && (
+                  <span className="text-[8px] font-mono text-crimson animate-pulse-fast">⚠ FLASH</span>
+                )}
+                {item.threat_tag && (
+                  <span className={`text-[8px] font-mono px-1 py-0.5 rounded-sm border ${tagColors[item.threat_tag] || "text-muted-foreground border-border"}`}>
+                    {item.threat_tag}
+                  </span>
+                )}
+                {item.confidence && (
+                  <span className={`text-[8px] font-mono ${confidenceColors[item.confidence] || "text-muted-foreground"}`}>
+                    CONF:{item.confidence}
+                  </span>
+                )}
               </div>
               <span className="text-[9px] text-muted-foreground font-mono">
                 {new Date(item.timestamp).toLocaleTimeString("en-US", { hour12: false })}Z
               </span>
+            </div>
+            <div className="flex items-center gap-1.5 mb-1">
+              <span className="text-[9px] text-primary/70 font-mono">{item.source}</span>
             </div>
             <p className="text-[11px] text-foreground/80 leading-relaxed mb-1.5">
               {item.content}

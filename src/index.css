@@ -136,6 +136,17 @@
       hsl(185 80% 50% / 0.015) 4px
     );
   }
+  .panel-glass {
+    background: hsl(220 18% 7% / 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  .animate-pulse-fast {
+    animation: threat-pulse 0.8s ease-in-out infinite;
+  }
+  .border-glow-crimson {
+    animation: border-glow-red 2s ease-in-out infinite;
+  }
 }
 
 /* Scrollbar styling */
@@ -165,4 +176,8 @@
 @keyframes data-stream {
   0% { transform: translateY(0); }
   100% { transform: translateY(-100%); }
+}
+@keyframes border-glow-red {
+  0%, 100% { border-color: hsl(0 85% 55% / 0.3); box-shadow: 0 0 8px hsl(0 85% 55% / 0.1); }
+  50% { border-color: hsl(0 85% 55% / 0.6); box-shadow: 0 0 15px hsl(0 85% 55% / 0.2); }
 }

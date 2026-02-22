@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
@@ -17,6 +17,7 @@ interface ThreatData {
   maritimeAnomalyIndex: number;
   analysisNarrative: string;
   watchcon: string;
+  marketDivergences?: string[];
 }
 
 interface LiveMetadata {
@@ -24,32 +25,107 @@ interface LiveMetadata {
   milTrackCount: number;
   averageSentiment: number;
   timestamp: string;
+  dominantCategory?: string;
 }
 
-const ThreatGauge = ({ label, value, color }: { label: string; value: number; color: string }) => {
-  const colorClass = color === "crimson" ? "bg-crimson" : color === "amber" ? "bg-amber" : "bg-primary";
+interface MarketItem {
+  id: string;
+  question: string;
+  yesPrice: number | null;
+  volume: number;
+}
+
+// Animated counter
+const AnimatedNumber = ({ value, suffix = "" }: { value: number; suffix?: string }) => {
+  const [display, setDisplay] = useState(0);
+  const ref = useRef<number>(0);
+
+  useEffect(() => {
+    const start = ref.current;
+    const diff = value - start;
+    const duration = 1200;
+    const startTime = performance.now();
+
+    const animate = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const current = start + diff * eased;
+      setDisplay(current);
+      ref.current = current;
+      if (progress < 1) requestAnimationFrame(animate);
+    };
+    requestAnimationFrame(animate);
+  }, [value]);
+
+  return <>{Math.round(display)}{suffix}</>;
+};
+
+// Radial gauge
+const RadialGauge = ({ label, value, color, size = 72 }: { label: string; value: number; color: string; size?: number }) => {
+  const radius = (size - 8) / 2;
+  const circumference = Math.PI * radius; // half circle
+  const offset = circumference - (value / 100) * circumference;
+
+  const strokeColor = color === "crimson" ? "hsl(0 85% 55%)" : color === "amber" ? "hsl(38 90% 55%)" : "hsl(185 80% 50%)";
   const textClass = color === "crimson" ? "text-crimson" : color === "amber" ? "text-amber" : "text-primary";
-  const glowClass = color === "crimson" ? "glow-crimson" : color === "amber" ? "glow-amber" : "glow-cyan";
 
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] text-muted-foreground font-mono uppercase">{label}</span>
-        <span className={`text-[11px] font-mono font-bold ${textClass}`}>{Math.round(value)}%</span>
-      </div>
-      <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
-        <motion.div
-          initial={{ width: 0 }}
-          animate={{ width: `${value}%` }}
-          transition={{ duration: 1.5, ease: "easeOut" }}
-          className={`h-full rounded-full ${colorClass} ${value > 50 ? glowClass : ""}`}
+    <div className="flex flex-col items-center gap-1">
+      <svg width={size} height={size / 2 + 8} viewBox={`0 0 ${size} ${size / 2 + 8}`}>
+        {/* Background arc */}
+        <path
+          d={`M 4 ${size / 2 + 4} A ${radius} ${radius} 0 0 1 ${size - 4} ${size / 2 + 4}`}
+          fill="none"
+          stroke="hsl(220 15% 15%)"
+          strokeWidth="4"
+          strokeLinecap="round"
         />
-      </div>
+        {/* Value arc */}
+        <motion.path
+          d={`M 4 ${size / 2 + 4} A ${radius} ${radius} 0 0 1 ${size - 4} ${size / 2 + 4}`}
+          fill="none"
+          stroke={strokeColor}
+          strokeWidth="4"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          initial={{ strokeDashoffset: circumference }}
+          animate={{ strokeDashoffset: offset }}
+          transition={{ duration: 1.5, ease: "easeOut" }}
+          style={{ filter: value > 50 ? `drop-shadow(0 0 4px ${strokeColor})` : "none" }}
+        />
+        <text x={size / 2} y={size / 2} textAnchor="middle" className={`text-[13px] font-mono font-bold ${textClass}`} fill="currentColor">
+          <AnimatedNumber value={value} suffix="%" />
+        </text>
+      </svg>
+      <span className="text-[8px] text-muted-foreground font-mono uppercase text-center leading-tight">{label}</span>
     </div>
   );
 };
 
-const ThreatEngine = ({ liveMetadata }: { liveMetadata: LiveMetadata | null }) => {
+// WATCHCON badge
+const WatchconBadge = ({ level }: { level: string }) => {
+  const num = parseInt(level) || 3;
+  const colors: Record<number, string> = {
+    1: "bg-crimson text-crimson-foreground border-crimson glow-crimson",
+    2: "bg-amber/80 text-background border-amber glow-amber",
+    3: "bg-yellow-500/70 text-background border-yellow-500",
+    4: "bg-tactical-green/70 text-background border-tactical-green",
+    5: "bg-primary/70 text-background border-primary glow-cyan",
+  };
+
+  return (
+    <motion.div
+      initial={{ scale: 0.8, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-sm border text-[10px] font-mono font-bold ${colors[num] || colors[3]}`}
+    >
+      WATCHCON {level}
+    </motion.div>
+  );
+};
+
+const ThreatEngine = ({ liveMetadata, marketData = [] }: { liveMetadata: LiveMetadata | null; marketData?: MarketItem[] }) => {
   const [data, setData] = useState<ThreatData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +134,6 @@ const ThreatEngine = ({ liveMetadata }: { liveMetadata: LiveMetadata | null }) =
     setLoading(true);
     setError(null);
     try {
-      // Use real data from live-intel if available, otherwise defaults
       const indicators = meta
         ? {
             sentimentScore: meta.averageSentiment,
@@ -66,8 +141,8 @@ const ThreatEngine = ({ liveMetadata }: { liveMetadata: LiveMetadata | null }) =
             maritimeAnomalyIndex: 45,
             goldsteinScale: meta.averageSentiment * 10,
             irgcnDeployments: "200% above baseline",
-            diplomaticSignals: `${meta.articleCount} GDELT conflict articles in latest fetch. Sentiment avg: ${meta.averageSentiment.toFixed(2)}`,
-            cyberIndicators: "2 APT campaigns detected targeting Gulf energy infrastructure",
+            diplomaticSignals: `${meta.articleCount} GDELT conflict articles across 3 streams. Dominant: ${meta.dominantCategory || "MILITARY"}. Sentiment: ${meta.averageSentiment.toFixed(2)}`,
+            cyberIndicators: "APT campaigns detected targeting Gulf energy infrastructure",
           }
         : {
             sentimentScore: -0.63,
@@ -79,13 +154,18 @@ const ThreatEngine = ({ liveMetadata }: { liveMetadata: LiveMetadata | null }) =
             cyberIndicators: "2 APT campaigns detected targeting Gulf infrastructure",
           };
 
+      // Add market data as additional indicators
+      const marketContext = marketData.length > 0
+        ? marketData.slice(0, 5).map(m => `"${m.question}": ${m.yesPrice ?? '?'}% YES`).join("; ")
+        : null;
+
       const resp = await fetch(THREAT_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ indicators }),
+        body: JSON.stringify({ indicators, marketContext }),
       });
 
       if (resp.status === 429) { toast.error("Rate limit exceeded."); return; }
@@ -103,7 +183,6 @@ const ThreatEngine = ({ liveMetadata }: { liveMetadata: LiveMetadata | null }) =
     }
   };
 
-  // Re-fetch when live metadata changes
   useEffect(() => {
     fetchThreatData(liveMetadata);
   }, [liveMetadata]);
@@ -128,7 +207,7 @@ const ThreatEngine = ({ liveMetadata }: { liveMetadata: LiveMetadata | null }) =
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-4">
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {loading && !d && (
           <div className="flex items-center justify-center py-8">
             <div className="text-center">
@@ -149,31 +228,32 @@ const ThreatEngine = ({ liveMetadata }: { liveMetadata: LiveMetadata | null }) =
 
         {d && (
           <>
-            {/* Tension Index */}
-            <div className="flex items-center justify-center gap-4 py-3">
-              <div className="text-center">
-                <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider mb-1">
-                  Composite Tension Index
+            {/* Tension Index + WATCHCON */}
+            <div className="flex items-center justify-between py-2">
+              <div className="text-center flex-1">
+                <p className="text-[9px] text-muted-foreground font-mono uppercase tracking-wider mb-1">
+                  Tension Index
                 </p>
                 <motion.p
                   key={d.tensionIndex}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className={`text-5xl font-sans font-bold ${
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className={`text-4xl font-sans font-bold ${
                     d.tensionIndex > 70 ? "text-crimson text-glow-crimson" :
                     d.tensionIndex > 40 ? "text-amber text-glow-amber" : "text-primary"
                   }`}
                 >
-                  {Math.round(d.tensionIndex)}
+                  <AnimatedNumber value={d.tensionIndex} />
                 </motion.p>
-                <p className="text-[9px] text-muted-foreground font-mono mt-1">
-                  / 100 — WATCHCON {d.watchcon}
-                </p>
+                <p className="text-[9px] text-muted-foreground font-mono mt-0.5">/ 100</p>
+              </div>
+              <div className="flex flex-col items-center gap-1">
+                <WatchconBadge level={d.watchcon} />
               </div>
             </div>
 
             {/* History chart */}
-            <div className="h-24">
+            <div className="h-16">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={MOCK_TENSION_HISTORY}>
                   <defs>
@@ -182,14 +262,14 @@ const ThreatEngine = ({ liveMetadata }: { liveMetadata: LiveMetadata | null }) =
                       <stop offset="95%" stopColor="hsl(38 90% 55%)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <XAxis dataKey="time" tick={{ fontSize: 9, fill: "hsl(200 10% 45%)" }} axisLine={false} tickLine={false} />
+                  <XAxis dataKey="time" tick={{ fontSize: 8, fill: "hsl(200 10% 45%)" }} axisLine={false} tickLine={false} />
                   <YAxis domain={[30, 80]} hide />
                   <RechartsTooltip
                     contentStyle={{
                       background: "hsl(220 18% 7%)",
                       border: "1px solid hsl(220 15% 14%)",
                       borderRadius: "2px",
-                      fontSize: "10px",
+                      fontSize: "9px",
                       fontFamily: "'JetBrains Mono', monospace",
                     }}
                   />
@@ -198,41 +278,41 @@ const ThreatEngine = ({ liveMetadata }: { liveMetadata: LiveMetadata | null }) =
               </ResponsiveContainer>
             </div>
 
-            {/* Threat gauges */}
-            <div className="space-y-3">
-              <ThreatGauge label="Strait of Hormuz Closure" value={d.hormuzClosure} color={d.hormuzClosure > 50 ? "crimson" : "amber"} />
-              <ThreatGauge label="Cyber Attack Probability" value={d.cyberAttack} color={d.cyberAttack > 50 ? "crimson" : "amber"} />
-              <ThreatGauge label="Proxy Escalation Risk" value={d.proxyEscalation} color={d.proxyEscalation > 50 ? "crimson" : "amber"} />
-              <ThreatGauge label="Direct Confrontation" value={d.directConfrontation} color={d.directConfrontation > 30 ? "amber" : "primary"} />
+            {/* Radial gauges */}
+            <div className="grid grid-cols-2 gap-2 py-1">
+              <RadialGauge label="Hormuz Closure" value={d.hormuzClosure} color={d.hormuzClosure > 50 ? "crimson" : "amber"} size={68} />
+              <RadialGauge label="Cyber Attack" value={d.cyberAttack} color={d.cyberAttack > 50 ? "crimson" : "amber"} size={68} />
+              <RadialGauge label="Proxy Escalation" value={d.proxyEscalation} color={d.proxyEscalation > 50 ? "crimson" : "amber"} size={68} />
+              <RadialGauge label="Direct Confrontation" value={d.directConfrontation} color={d.directConfrontation > 30 ? "amber" : "primary"} size={68} />
             </div>
 
             {/* Contributing factors */}
-            <div className="border-t border-panel-border pt-3 space-y-2">
-              <p className="text-[10px] text-muted-foreground font-mono uppercase">Contributing Factors</p>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="bg-secondary/30 border border-panel-border rounded-sm p-2">
-                  <p className="text-[9px] text-muted-foreground font-mono">OSINT Sentiment</p>
-                  <p className="text-sm font-mono text-amber">{d.sentimentScore.toFixed(2)}</p>
+            <div className="border-t border-panel-border pt-2 space-y-1.5">
+              <p className="text-[9px] text-muted-foreground font-mono uppercase">Factors</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                <div className="bg-secondary/30 border border-panel-border rounded-sm p-1.5">
+                  <p className="text-[8px] text-muted-foreground font-mono">OSINT SENT</p>
+                  <p className="text-xs font-mono text-amber">{d.sentimentScore.toFixed(2)}</p>
                 </div>
-                <div className="bg-secondary/30 border border-panel-border rounded-sm p-2">
-                  <p className="text-[9px] text-muted-foreground font-mono">Flight Anomaly Idx</p>
-                  <p className="text-sm font-mono text-crimson">{d.flightAnomalyIndex}</p>
+                <div className="bg-secondary/30 border border-panel-border rounded-sm p-1.5">
+                  <p className="text-[8px] text-muted-foreground font-mono">FLIGHT IDX</p>
+                  <p className="text-xs font-mono text-crimson">{d.flightAnomalyIndex}</p>
                 </div>
-                <div className="bg-secondary/30 border border-panel-border rounded-sm p-2">
-                  <p className="text-[9px] text-muted-foreground font-mono">Maritime Anomaly</p>
-                  <p className="text-sm font-mono text-amber">{d.maritimeAnomalyIndex}</p>
+                <div className="bg-secondary/30 border border-panel-border rounded-sm p-1.5">
+                  <p className="text-[8px] text-muted-foreground font-mono">MARITIME</p>
+                  <p className="text-xs font-mono text-amber">{d.maritimeAnomalyIndex}</p>
                 </div>
-                <div className="bg-secondary/30 border border-panel-border rounded-sm p-2">
-                  <p className="text-[9px] text-muted-foreground font-mono">WATCHCON</p>
-                  <p className="text-sm font-mono text-crimson">{d.watchcon}</p>
+                <div className="bg-secondary/30 border border-panel-border rounded-sm p-1.5">
+                  <p className="text-[8px] text-muted-foreground font-mono">WATCHCON</p>
+                  <p className="text-xs font-mono text-crimson">{d.watchcon}</p>
                 </div>
               </div>
             </div>
 
             {/* AI Narrative */}
             {d.analysisNarrative && (
-              <div className="border-t border-panel-border pt-3">
-                <p className="text-[10px] text-muted-foreground font-mono uppercase mb-1">AI Analysis</p>
+              <div className="border-t border-panel-border pt-2">
+                <p className="text-[9px] text-muted-foreground font-mono uppercase mb-1">AI Analysis</p>
                 <p className="text-[10px] text-foreground/70 leading-relaxed">{d.analysisNarrative}</p>
               </div>
             )}
