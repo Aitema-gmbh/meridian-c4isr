@@ -6,16 +6,30 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const SEARCH_KEYWORDS = [
-  "iran", "war", "conflict", "middle east", "nuclear", "sanctions",
-  "oil", "hormuz", "military", "israel", "strike", "attack",
-  "china", "russia", "nato", "missile", "drone", "gaza", "hezbollah",
-  "yemen", "houthi", "syria", "lebanon", "geopolitical",
+// Known Iran-related event slugs on Polymarket
+const IRAN_SLUGS = [
+  "will-the-iranian-regime-fall-by-the-end-of-2026",
+  "will-the-us-invade-iran-by-march-31",
+  "iran-strike-on-us-military-by-march-31",
+  "khamenei-out-as-supreme-leader-of-iran-by-december-31-2026",
+  "will-the-iranian-regime-fall-by-june-30",
+  "will-the-us-strike-iran-in-2025",
+  "us-iran-war-2025",
+  "iran-nuclear-weapon-2025",
+  "iran-nuclear-weapon-2026",
+  "us-strikes-iran-nuclear",
+  "will-iran-get-a-nuclear-weapon-in-2025",
 ];
 
-function isGeopolitical(text: string): boolean {
+// Iran-specific keywords for filtering
+const IRAN_KEYWORDS = [
+  "iran", "iranian", "tehran", "khamenei", "irgc", "hormuz",
+  "persian gulf", "raisi", "pezeshkian",
+];
+
+function isIranRelated(text: string): boolean {
   const lower = text.toLowerCase();
-  return SEARCH_KEYWORDS.some((kw) => lower.includes(kw));
+  return IRAN_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
 serve(async (req) => {
@@ -24,16 +38,37 @@ serve(async (req) => {
   }
 
   try {
-    // Search multiple keywords in parallel
-    const searchTerms = ["iran", "war", "middle east", "nuclear", "oil crisis", "military conflict", "israel"];
+    // Strategy: fetch by known slugs + search by tag "iran" + keyword searches
+    const fetches: Promise<any[]>[] = [];
 
-    const results = await Promise.all(
-      searchTerms.map((term) =>
-        fetch(`https://gamma-api.polymarket.com/events?active=true&closed=false&limit=10&title_contains=${encodeURIComponent(term)}`)
+    // 1. Fetch each known slug
+    for (const slug of IRAN_SLUGS) {
+      fetches.push(
+        fetch(`https://gamma-api.polymarket.com/events?slug=${slug}&active=true&closed=false`)
           .then((r) => r.ok ? r.json() : [])
           .catch(() => [])
-      )
-    );
+      );
+    }
+
+    // 2. Search by tag
+    for (const tag of ["iran", "middle-east"]) {
+      fetches.push(
+        fetch(`https://gamma-api.polymarket.com/events?active=true&closed=false&limit=20&tag=${tag}`)
+          .then((r) => r.ok ? r.json() : [])
+          .catch(() => [])
+      );
+    }
+
+    // 3. Keyword searches that might catch Iran markets
+    for (const term of ["iran", "iranian", "khamenei", "hormuz", "tehran"]) {
+      fetches.push(
+        fetch(`https://gamma-api.polymarket.com/events?active=true&closed=false&limit=20&title_contains=${encodeURIComponent(term)}`)
+          .then((r) => r.ok ? r.json() : [])
+          .catch(() => [])
+      );
+    }
+
+    const results = await Promise.all(fetches);
 
     const seen = new Set<string>();
     const markets: any[] = [];
@@ -43,16 +78,28 @@ serve(async (req) => {
       for (const event of events) {
         const id = event.id || event.slug;
         if (!id || seen.has(id)) continue;
-        seen.add(id);
 
         const slug = event.slug || id;
         const url = `https://polymarket.com/event/${slug}`;
         const title = event.title || "";
 
+        // Check if event has Iran tag
+        const hasIranTag = event.tags?.some((t: any) =>
+          ["iran", "middle-east", "israel"].includes(t.slug?.toLowerCase())
+        );
+
         const eventMarkets = event.markets || [];
+        let addedFromEvent = false;
+
         for (const market of eventMarkets) {
           const question = market.question || title;
-          if (!isGeopolitical(question) && !isGeopolitical(title)) continue;
+          // Only include if Iran-related (by text or tag)
+          if (!isIranRelated(question) && !isIranRelated(title) && !hasIranTag) continue;
+          // Skip closed sub-markets
+          if (market.closed) continue;
+
+          seen.add(id);
+          addedFromEvent = true;
 
           const outcomePrices = market.outcomePrices
             ? (typeof market.outcomePrices === "string" ? JSON.parse(market.outcomePrices) : market.outcomePrices)
@@ -64,22 +111,24 @@ serve(async (req) => {
           markets.push({
             id: market.id || id,
             question,
-            category: event.tags?.[0]?.label || event.category || "Geopolitical",
+            category: event.tags?.find((t: any) => t.slug === "iran")?.label || "Iran",
             yesPrice: yesPrice !== null ? Math.round(yesPrice * 100) : null,
             noPrice: noPrice !== null ? Math.round(noPrice * 100) : null,
             volume: parseFloat(market.volume || market.volumeNum || "0"),
-            liquidity: parseFloat(market.liquidity || "0"),
+            liquidity: parseFloat(market.liquidity || market.liquidityNum || "0"),
             endDate: market.endDate || event.endDate,
             active: market.active ?? true,
             url,
           });
         }
 
-        if (eventMarkets.length === 0 && isGeopolitical(title)) {
+        // If no sub-markets but event is Iran-related
+        if (!addedFromEvent && eventMarkets.length === 0 && (isIranRelated(title) || hasIranTag)) {
+          seen.add(id);
           markets.push({
             id,
             question: title,
-            category: event.tags?.[0]?.label || "Geopolitical",
+            category: "Iran",
             yesPrice: null,
             noPrice: null,
             volume: 0,

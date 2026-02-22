@@ -34,7 +34,7 @@ const PredictionMarkets = ({ markets, loading, onRefresh }: PredictionMarketsPro
         <div className="flex items-center gap-2">
           <div className={`h-2 w-2 rounded-full ${loading ? "bg-amber animate-pulse-glow" : "bg-tactical-green animate-pulse-glow"}`} />
           <span className="text-[11px] font-mono uppercase tracking-wider text-tactical-green">
-            Geopolitical Markets
+            Iran Markets
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -154,7 +154,7 @@ const PredictionMarkets = ({ markets, loading, onRefresh }: PredictionMarketsPro
 
         {!loading && markets.length === 0 && (
           <div className="text-center py-8">
-            <p className="text-[10px] text-muted-foreground font-mono">NO ACTIVE GEOPOLITICAL MARKETS FOUND</p>
+            <p className="text-[10px] text-muted-foreground font-mono">NO ACTIVE IRAN MARKETS FOUND</p>
           </div>
         )}
       </div>

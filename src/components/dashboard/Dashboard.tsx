@@ -331,7 +331,7 @@ const Dashboard = () => {
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              GEOPOLITICAL MARKETS
+              IRAN MARKETS
             </button>
           </div>
 
