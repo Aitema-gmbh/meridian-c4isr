@@ -6,7 +6,12 @@ type Message = { role: "user" | "assistant"; content: string };
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/intel-chat`;
 
-const AIAssistant = () => {
+interface LiveIntelData {
+  items: { priority: string; content: string; source: string; entities: string[]; sentiment: number }[];
+  metadata: { articleCount: number; milTrackCount: number; averageSentiment: number; timestamp: string };
+}
+
+const AIAssistant = ({ liveData }: { liveData: LiveIntelData | null }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -27,40 +32,37 @@ const AIAssistant = () => {
     setIsLoading(true);
 
     let assistantSoFar = "";
-
     const upsertAssistant = (chunk: string) => {
       assistantSoFar += chunk;
       setMessages((prev) => {
         const last = prev[prev.length - 1];
         if (last?.role === "assistant") {
-          return prev.map((m, i) =>
-            i === prev.length - 1 ? { ...m, content: assistantSoFar } : m
-          );
+          return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m);
         }
         return [...prev, { role: "assistant", content: assistantSoFar }];
       });
     };
 
     try {
+      // Build context from live data
+      let liveContext = "";
+      if (liveData) {
+        const m = liveData.metadata;
+        const topItems = liveData.items.slice(0, 5).map((it, i) => `${i + 1}. [${it.priority}] ${it.content}`).join("\n");
+        liveContext = `\n\nCURRENT LIVE INTELLIGENCE (as of ${m.timestamp}):\n- Military aircraft tracked in Gulf AOR: ${m.milTrackCount}\n- GDELT conflict articles: ${m.articleCount}\n- Average OSINT sentiment: ${m.averageSentiment.toFixed(2)}\n\nLatest Intel Items:\n${topItems}`;
+      }
+
       const resp = await fetch(CHAT_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ messages: allMessages }),
+        body: JSON.stringify({ messages: allMessages, liveContext }),
       });
 
-      if (resp.status === 429) {
-        toast.error("Rate limit exceeded. Please wait before trying again.");
-        setIsLoading(false);
-        return;
-      }
-      if (resp.status === 402) {
-        toast.error("AI credits exhausted. Add credits in Settings → Workspace → Usage.");
-        setIsLoading(false);
-        return;
-      }
+      if (resp.status === 429) { toast.error("Rate limit exceeded."); setIsLoading(false); return; }
+      if (resp.status === 402) { toast.error("AI credits exhausted."); setIsLoading(false); return; }
       if (!resp.ok || !resp.body) throw new Error("Failed to start stream");
 
       const reader = resp.body.getReader();
@@ -72,7 +74,6 @@ const AIAssistant = () => {
         const { done, value } = await reader.read();
         if (done) break;
         textBuffer += decoder.decode(value, { stream: true });
-
         let newlineIndex: number;
         while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
           let line = textBuffer.slice(0, newlineIndex);
@@ -80,10 +81,8 @@ const AIAssistant = () => {
           if (line.endsWith("\r")) line = line.slice(0, -1);
           if (line.startsWith(":") || line.trim() === "") continue;
           if (!line.startsWith("data: ")) continue;
-
           const jsonStr = line.slice(6).trim();
           if (jsonStr === "[DONE]") { streamDone = true; break; }
-
           try {
             const parsed = JSON.parse(jsonStr);
             const content = parsed.choices?.[0]?.delta?.content as string | undefined;
@@ -95,7 +94,6 @@ const AIAssistant = () => {
         }
       }
 
-      // Final flush
       if (textBuffer.trim()) {
         for (let raw of textBuffer.split("\n")) {
           if (!raw) continue;
@@ -129,7 +127,7 @@ const AIAssistant = () => {
           </span>
         </div>
         <span className="text-[10px] text-primary/50 font-mono">
-          {isLoading ? "PROCESSING..." : "LIVE AI"}
+          {isLoading ? "PROCESSING..." : liveData ? "LIVE CONTEXT" : "LIVE AI"}
         </span>
       </div>
 
@@ -151,9 +149,7 @@ const AIAssistant = () => {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             className={`${
-              msg.role === "user"
-                ? "bg-primary/5 border-primary/20"
-                : "bg-secondary/30 border-panel-border"
+              msg.role === "user" ? "bg-primary/5 border-primary/20" : "bg-secondary/30 border-panel-border"
             } border rounded-sm p-2.5`}
           >
             <p className="text-[9px] text-muted-foreground font-mono uppercase mb-1">
