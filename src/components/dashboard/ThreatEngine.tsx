@@ -19,6 +19,13 @@ interface ThreatData {
   watchcon: string;
 }
 
+interface LiveMetadata {
+  articleCount: number;
+  milTrackCount: number;
+  averageSentiment: number;
+  timestamp: string;
+}
+
 const ThreatGauge = ({ label, value, color }: { label: string; value: number; color: string }) => {
   const colorClass = color === "crimson" ? "bg-crimson" : color === "amber" ? "bg-amber" : "bg-primary";
   const textClass = color === "crimson" ? "text-crimson" : color === "amber" ? "text-amber" : "text-primary";
@@ -42,44 +49,47 @@ const ThreatGauge = ({ label, value, color }: { label: string; value: number; co
   );
 };
 
-const ThreatEngine = () => {
+const ThreatEngine = ({ liveMetadata }: { liveMetadata: LiveMetadata | null }) => {
   const [data, setData] = useState<ThreatData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchThreatData = async () => {
+  const fetchThreatData = async (meta: LiveMetadata | null) => {
     setLoading(true);
     setError(null);
     try {
+      // Use real data from live-intel if available, otherwise defaults
+      const indicators = meta
+        ? {
+            sentimentScore: meta.averageSentiment,
+            flightAnomalyIndex: Math.min(meta.milTrackCount * 3, 100),
+            maritimeAnomalyIndex: 45,
+            goldsteinScale: meta.averageSentiment * 10,
+            irgcnDeployments: "200% above baseline",
+            diplomaticSignals: `${meta.articleCount} GDELT conflict articles in latest fetch. Sentiment avg: ${meta.averageSentiment.toFixed(2)}`,
+            cyberIndicators: "2 APT campaigns detected targeting Gulf energy infrastructure",
+          }
+        : {
+            sentimentScore: -0.63,
+            flightAnomalyIndex: 72,
+            maritimeAnomalyIndex: 45,
+            goldsteinScale: -7.2,
+            irgcnDeployments: "200% above baseline",
+            diplomaticSignals: "Iranian FM denies buildup, combative tone.",
+            cyberIndicators: "2 APT campaigns detected targeting Gulf infrastructure",
+          };
+
       const resp = await fetch(THREAT_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({
-          indicators: {
-            sentimentScore: -0.63,
-            flightAnomalyIndex: 72,
-            maritimeAnomalyIndex: 45,
-            goldsteinScale: -7.2,
-            irgcnDeployments: "200% above baseline",
-            diplomaticSignals: "Iranian FM denies buildup, combative tone. No UN Security Council session scheduled.",
-            cyberIndicators: "2 APT campaigns detected targeting Gulf energy infrastructure",
-          },
-        }),
+        body: JSON.stringify({ indicators }),
       });
 
-      if (resp.status === 429) {
-        toast.error("Rate limit exceeded. Try again shortly.");
-        setLoading(false);
-        return;
-      }
-      if (resp.status === 402) {
-        toast.error("AI credits exhausted.");
-        setLoading(false);
-        return;
-      }
+      if (resp.status === 429) { toast.error("Rate limit exceeded."); return; }
+      if (resp.status === 402) { toast.error("AI credits exhausted."); return; }
       if (!resp.ok) throw new Error("Threat engine error");
 
       const result = await resp.json();
@@ -93,9 +103,10 @@ const ThreatEngine = () => {
     }
   };
 
+  // Re-fetch when live metadata changes
   useEffect(() => {
-    fetchThreatData();
-  }, []);
+    fetchThreatData(liveMetadata);
+  }, [liveMetadata]);
 
   const d = data;
 
@@ -109,7 +120,7 @@ const ThreatEngine = () => {
           </span>
         </div>
         <button
-          onClick={fetchThreatData}
+          onClick={() => fetchThreatData(liveMetadata)}
           disabled={loading}
           className="text-[9px] font-mono text-primary/60 hover:text-primary transition-colors disabled:opacity-30"
         >
@@ -130,7 +141,7 @@ const ThreatEngine = () => {
         {error && !d && (
           <div className="text-center py-8">
             <p className="text-[10px] text-crimson font-mono">{error}</p>
-            <button onClick={fetchThreatData} className="text-[10px] text-primary font-mono mt-2 hover:underline">
+            <button onClick={() => fetchThreatData(liveMetadata)} className="text-[10px] text-primary font-mono mt-2 hover:underline">
               RETRY
             </button>
           </div>

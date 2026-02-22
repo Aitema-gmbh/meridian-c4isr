@@ -4,6 +4,22 @@
 
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
 
+/* Leaflet tooltip styling for tactical theme */
+.leaflet-tooltip-tactical {
+  background: hsl(220 18% 7% / 0.95) !important;
+  border: 1px solid hsl(220 15% 14%) !important;
+  border-radius: 2px !important;
+  color: #ccc !important;
+  padding: 4px 8px !important;
+  box-shadow: 0 0 10px hsl(185 80% 50% / 0.1) !important;
+}
+.leaflet-tooltip-tactical::before {
+  border-top-color: hsl(220 15% 14%) !important;
+}
+.leaflet-container {
+  background: hsl(220 20% 4%) !important;
+}
+
 @layer base {
   :root {
     /* Obsidian Dark - Primary surfaces */

@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
+import { toast } from "sonner";
 import ThreatMatrix from "./ThreatMatrix";
 import IntelFeed from "./IntelFeed";
 import ThreatEngine from "./ThreatEngine";
@@ -7,8 +8,29 @@ import NetworkGraph from "./NetworkGraph";
 import AIAssistant from "./AIAssistant";
 
 const DEDICATION = "Dedicated to Manos, Ghassan and Fedo";
+const LIVE_INTEL_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/live-intel`;
 
-const DataTicker = () => {
+interface IntelItem {
+  id: number;
+  timestamp: string;
+  source: string;
+  priority: "HIGH" | "MEDIUM" | "LOW";
+  content: string;
+  entities: string[];
+  sentiment: number;
+}
+
+interface LiveIntelData {
+  items: IntelItem[];
+  metadata: {
+    articleCount: number;
+    milTrackCount: number;
+    averageSentiment: number;
+    timestamp: string;
+  };
+}
+
+const DataTicker = ({ liveData }: { liveData: LiveIntelData | null }) => {
   const [time, setTime] = useState(new Date());
 
   useEffect(() => {
@@ -16,13 +38,14 @@ const DataTicker = () => {
     return () => clearInterval(timer);
   }, []);
 
+  const m = liveData?.metadata;
   const items = [
     "CENTCOM AOR: WATCHCON 2",
-    "HORMUZ TRANSIT: 3 VLCC DIVERTED",
-    "ADS-B: 14 MIL TRACKS ACTIVE",
-    "CYBER: 2 APT CAMPAIGNS DETECTED",
-    "OSINT: 847 CONFLICT EVENTS/6HR",
+    m ? `ADS-B: ${m.milTrackCount} MIL TRACKS ACTIVE` : "ADS-B: ACQUIRING...",
+    m ? `GDELT: ${m.articleCount} CONFLICT ARTICLES` : "GDELT: LOADING...",
+    m ? `OSINT SENTIMENT: ${m.averageSentiment.toFixed(2)}` : "OSINT: ANALYZING...",
     "MARITIME: AIS GAPS DETECTED — HORMUZ WEST",
+    "CYBER: 2 APT CAMPAIGNS DETECTED",
   ];
 
   return (
@@ -58,6 +81,46 @@ type TabView = "map" | "network";
 
 const Dashboard = () => {
   const [activeTab, setActiveTab] = useState<TabView>("map");
+  const [liveData, setLiveData] = useState<LiveIntelData | null>(null);
+  const [intelLoading, setIntelLoading] = useState(false);
+
+  const fetchLiveIntel = useCallback(async () => {
+    setIntelLoading(true);
+    try {
+      const resp = await fetch(LIVE_INTEL_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({}),
+      });
+
+      if (resp.status === 429) {
+        toast.error("Rate limit exceeded. Intel refresh delayed.");
+        return;
+      }
+      if (resp.status === 402) {
+        toast.error("AI credits exhausted.");
+        return;
+      }
+      if (!resp.ok) throw new Error("Live intel fetch failed");
+
+      const data: LiveIntelData = await resp.json();
+      setLiveData(data);
+    } catch (e) {
+      console.error("Live intel error:", e);
+      toast.error("Failed to fetch live intelligence.");
+    } finally {
+      setIntelLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLiveIntel();
+    const interval = setInterval(fetchLiveIntel, 300000); // 5 min
+    return () => clearInterval(interval);
+  }, [fetchLiveIntel]);
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -99,7 +162,7 @@ const Dashboard = () => {
       </div>
 
       {/* Data ticker */}
-      <DataTicker />
+      <DataTicker liveData={liveData} />
 
       {/* Main content */}
       <div className="flex-1 grid grid-cols-12 gap-px bg-panel-border overflow-hidden">
@@ -113,15 +176,19 @@ const Dashboard = () => {
           <div className="flex-1 grid grid-rows-2 gap-px bg-panel-border">
             {/* Intel Feed */}
             <div className="bg-background overflow-hidden">
-              <IntelFeed />
+              <IntelFeed
+                items={liveData?.items || []}
+                loading={intelLoading}
+                onRefresh={fetchLiveIntel}
+              />
             </div>
             {/* Bottom right: Threat Engine + AI */}
             <div className="bg-background grid grid-cols-2 gap-px bg-panel-border overflow-hidden">
               <div className="bg-background overflow-hidden">
-                <ThreatEngine />
+                <ThreatEngine liveMetadata={liveData?.metadata || null} />
               </div>
               <div className="bg-background overflow-hidden">
-                <AIAssistant />
+                <AIAssistant liveData={liveData} />
               </div>
             </div>
           </div>
