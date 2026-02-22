@@ -230,11 +230,10 @@ const Dashboard = () => {
   }, []);
 
   useEffect(() => {
-    // Load cached DB data first, then fetch fresh
-    loadFromDB().then(() => {
-      fetchLiveIntel();
-      fetchMarkets();
-    });
+    // Fetch fresh data immediately, load DB in parallel as fallback
+    fetchLiveIntel();
+    fetchMarkets();
+    loadFromDB(); // fills in if live fetches are slow
     const intelInterval = setInterval(fetchLiveIntel, 300000);
     const marketsInterval = setInterval(fetchMarkets, 120000);
     return () => { clearInterval(intelInterval); clearInterval(marketsInterval); };
@@ -332,7 +331,7 @@ const Dashboard = () => {
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              IRAN MARKETS
+              GEOPOLITICAL MARKETS
             </button>
           </div>
 

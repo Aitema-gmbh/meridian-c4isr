@@ -16,7 +16,8 @@ interface AircraftData {
   dbFlags?: number;
 }
 
-const GULF_BOUNDS = { latMin: 20, latMax: 35, lngMin: 44, lngMax: 65 };
+// Show global military aircraft, not just Gulf
+const GULF_BOUNDS = { latMin: -90, latMax: 90, lngMin: -180, lngMax: 180 };
 
 const buildAircraftTooltip = (ac: AircraftData) => {
   let html = `<div style="font-family:'JetBrains Mono',monospace;font-size:10px;line-height:1.4">`;
