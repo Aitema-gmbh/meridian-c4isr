@@ -19,9 +19,16 @@ const IRAN_SLUGS = [
   "iran-nuclear-weapon-2026",
   "us-strikes-iran-nuclear",
   "will-iran-get-a-nuclear-weapon-in-2025",
+  // 2026 crisis slugs
+  "us-iran-war-2026",
+  "us-strikes-iran-nuclear-2026",
+  "strait-of-hormuz-closure-2026",
+  "iran-regime-change-2026",
+  "will-the-us-strike-iran-in-2026",
+  "iran-nuclear-weapon-by-end-of-2026",
 ];
 
-const IRAN_KEYWORDS = ["iran", "iranian", "tehran", "khamenei", "irgc", "hormuz", "persian gulf", "pezeshkian"];
+const IRAN_KEYWORDS = ["iran", "iranian", "tehran", "khamenei", "irgc", "hormuz", "persian gulf", "pezeshkian", "larijani", "nuclear deal", "nuclear talks", "midnight hammer", "strike", "war", "fordow", "natanz", "ballistic missile"];
 
 function isIranRelated(text: string): boolean {
   const lower = text.toLowerCase();

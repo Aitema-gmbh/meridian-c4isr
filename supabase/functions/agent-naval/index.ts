@@ -15,23 +15,34 @@ interface VesselData {
 }
 
 const MILITARY_VESSELS: VesselData[] = [
-  { mmsi: "338901001", name: "USS DWIGHT D. EISENHOWER", type: "Aircraft Carrier", class: "Nimitz-class", category: "NAVAL", lat: 25.10, lon: 57.20, speed: 18.0, course: 270, heading: 268, flag: "US", destination: "PATROL", length: 333, hull: "CVN-69", status: "Under way" },
+  // === US Carrier Strike Groups (2x deployed Feb 2026) ===
+  { mmsi: "338901001", name: "USS NIMITZ", type: "Aircraft Carrier", class: "Nimitz-class", category: "NAVAL", lat: 25.10, lon: 57.20, speed: 18.0, course: 270, heading: 268, flag: "US", destination: "PERSIAN GULF PATROL", length: 333, hull: "CVN-68", status: "Under way" },
+  { mmsi: "338901020", name: "USS ABRAHAM LINCOLN", type: "Aircraft Carrier", class: "Nimitz-class", category: "NAVAL", lat: 24.20, lon: 59.50, speed: 20.0, course: 290, heading: 288, flag: "US", destination: "GULF OF OMAN", length: 333, hull: "CVN-72", status: "Under way" },
+  // === US Escorts ===
   { mmsi: "338901002", name: "USS MASON", type: "Destroyer", class: "Arleigh Burke-class", category: "NAVAL", lat: 13.50, lon: 42.60, speed: 22.0, course: 180, heading: 178, flag: "US", destination: "RED SEA PATROL", length: 155, hull: "DDG-87", status: "Under way" },
-  { mmsi: "338901003", name: "USS LAKE ERIE", type: "Cruiser", class: "Ticonderoga-class", category: "NAVAL", lat: 25.35, lon: 56.80, speed: 16.0, course: 285, heading: 283, flag: "US", destination: "ESCORT", length: 173, hull: "CG-70", status: "Under way" },
+  { mmsi: "338901003", name: "USS LAKE ERIE", type: "Cruiser", class: "Ticonderoga-class", category: "NAVAL", lat: 25.35, lon: 56.80, speed: 16.0, course: 285, heading: 283, flag: "US", destination: "CSG ESCORT", length: 173, hull: "CG-70", status: "Under way" },
   { mmsi: "338901004", name: "USS RALPH JOHNSON", type: "Destroyer", class: "Arleigh Burke-class", category: "NAVAL", lat: 24.90, lon: 57.50, speed: 20.0, course: 250, heading: 248, flag: "US", destination: "PATROL", length: 155, hull: "DDG-114", status: "Under way" },
+  { mmsi: "338901021", name: "USS SPRUANCE", type: "Destroyer", class: "Arleigh Burke-class", category: "NAVAL", lat: 24.50, lon: 59.80, speed: 19.0, course: 300, heading: 298, flag: "US", destination: "CSG-3 ESCORT", length: 155, hull: "DDG-111", status: "Under way" },
+  { mmsi: "338901022", name: "USS WILLIAM P. LAWRENCE", type: "Destroyer", class: "Arleigh Burke-class", category: "NAVAL", lat: 23.80, lon: 60.20, speed: 18.0, course: 310, heading: 308, flag: "US", destination: "CSG-3 ESCORT", length: 155, hull: "DDG-110", status: "Under way" },
+  // === US ARGs ===
   { mmsi: "338901005", name: "USS IWO JIMA", type: "Amphibious Assault Ship", class: "Wasp-class", category: "NAVAL", lat: 14.20, lon: 42.30, speed: 14.0, course: 340, heading: 338, flag: "US", destination: "RED SEA", length: 253, hull: "LHD-7", status: "Under way" },
+  { mmsi: "338901008", name: "USS BATAAN", type: "Amphibious Assault Ship", class: "Wasp-class", category: "NAVAL", lat: 26.20, lon: 53.10, speed: 12.0, course: 90, heading: 88, flag: "US", destination: "PERSIAN GULF", length: 253, hull: "LHD-5", status: "Under way" },
+  // === US Red Sea escorts ===
   { mmsi: "338901006", name: "USS GRAVELY", type: "Destroyer", class: "Arleigh Burke-class", category: "NAVAL", lat: 13.80, lon: 42.90, speed: 18.0, course: 165, heading: 163, flag: "US", destination: "PATROL", length: 155, hull: "DDG-107", status: "Under way" },
   { mmsi: "338901007", name: "USS LABOON", type: "Destroyer", class: "Arleigh Burke-class", category: "NAVAL", lat: 12.90, lon: 43.50, speed: 20.0, course: 200, heading: 198, flag: "US", destination: "BAB EL-MANDEB", length: 155, hull: "DDG-58", status: "Under way" },
-  { mmsi: "338901008", name: "USS BATAAN", type: "Amphibious Assault Ship", class: "Wasp-class", category: "NAVAL", lat: 26.20, lon: 53.10, speed: 12.0, course: 90, heading: 88, flag: "US", destination: "PERSIAN GULF", length: 253, hull: "LHD-5", status: "Under way" },
+  // === Allied Naval Forces ===
   { mmsi: "245901001", name: "HNLMS TROMP", type: "Frigate", class: "De Zeven Provinciën-class", category: "NAVAL", lat: 12.30, lon: 44.10, speed: 15.0, course: 90, heading: 88, flag: "NL", destination: "PATROL", length: 144, hull: "F803", status: "Under way" },
   { mmsi: "232901001", name: "HMS DIAMOND", type: "Destroyer", class: "Type 45 Daring-class", category: "NAVAL", lat: 13.20, lon: 43.00, speed: 18.0, course: 340, heading: 338, flag: "GB", destination: "RED SEA PATROL", length: 152, hull: "D34", status: "Under way" },
   { mmsi: "226901001", name: "FS ALSACE", type: "Frigate", class: "FREMM-class", category: "NAVAL", lat: 14.50, lon: 42.50, speed: 16.0, course: 10, heading: 8, flag: "FR", destination: "PATROL", length: 142, hull: "D656", status: "Under way" },
   { mmsi: "247901001", name: "ITS VIRGINIO FASAN", type: "Frigate", class: "FREMM Bergamini-class", category: "NAVAL", lat: 11.80, lon: 43.80, speed: 14.0, course: 120, heading: 118, flag: "IT", destination: "EU ASPIDES", length: 144, hull: "F591", status: "Under way" },
   { mmsi: "211901001", name: "FGS HESSEN", type: "Frigate", class: "Sachsen-class", category: "NAVAL", lat: 15.10, lon: 41.90, speed: 17.0, course: 160, heading: 158, flag: "DE", destination: "RED SEA", length: 143, hull: "F221", status: "Under way" },
+  // === Iranian Navy (IRIN + IRGCN) ===
   { mmsi: "422901001", name: "IRIS ALBORZ", type: "Frigate", class: "Alvand-class", category: "NAVAL", lat: 26.70, lon: 56.30, speed: 12.0, course: 110, heading: 108, flag: "IR", destination: "HORMUZ PATROL", length: 94, hull: "F72", status: "Under way" },
   { mmsi: "422901002", name: "IRIS DENA", type: "Destroyer", class: "Moudge-class", category: "NAVAL", lat: 27.20, lon: 52.80, speed: 14.0, course: 200, heading: 198, flag: "IR", destination: "PERSIAN GULF", length: 95, hull: "F75", status: "Under way" },
   { mmsi: "422901003", name: "IRIS SAHAND", type: "Frigate", class: "Moudge-class", category: "NAVAL", lat: 25.60, lon: 57.00, speed: 10.0, course: 300, heading: 298, flag: "IR", destination: "GOO PATROL", length: 95, hull: "F74", status: "Under way" },
   { mmsi: "422901004", name: "IRIS JAMARAN", type: "Frigate", class: "Moudge-class", category: "NAVAL", lat: 26.85, lon: 54.50, speed: 8.0, course: 45, heading: 43, flag: "IR", destination: "BANDAR ABBAS", length: 95, hull: "F76", status: "Under way" },
+  { mmsi: "422901005", name: "IRGCN FAST ATTACK CRAFT SQN", type: "Fast Patrol Boats", class: "Peykaap-class", category: "NAVAL", lat: 26.55, lon: 56.15, speed: 35.0, course: 90, heading: 88, flag: "IR", destination: "HORMUZ SWARM", length: 23, hull: "IRGCN-FPB", status: "Under way" },
+  // === Regional Partners ===
   { mmsi: "463901001", name: "PNS TUGHRIL", type: "Frigate", class: "Type 054A/P", category: "NAVAL", lat: 23.80, lon: 61.50, speed: 16.0, course: 250, heading: 248, flag: "PK", destination: "CTF-150", length: 134, hull: "F263", status: "Under way" },
   { mmsi: "403901001", name: "RSNF AL RIYADH", type: "Frigate", class: "La Fayette-class", category: "NAVAL", lat: 18.50, lon: 40.20, speed: 14.0, course: 180, heading: 178, flag: "SA", destination: "RED SEA PATROL", length: 133, hull: "812", status: "Under way" },
   { mmsi: "470901001", name: "ESPS CANARIAS", type: "Frigate", class: "F-100 Álvaro de Bazán", category: "NAVAL", lat: 11.50, lon: 44.50, speed: 15.0, course: 70, heading: 68, flag: "ES", destination: "EU ASPIDES", length: 147, hull: "F86", status: "Under way" },
