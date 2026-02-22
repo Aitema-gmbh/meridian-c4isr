@@ -23,7 +23,7 @@ const priorityStyles = {
   LOW: "text-muted-foreground border-border bg-secondary/30",
 };
 
-const IntelFeed = ({ items, loading, onRefresh }: IntelFeedProps) => {
+const IntelFeed = ({ items = [], loading, onRefresh }: IntelFeedProps) => {
   return (
     <div className="panel-tactical flex flex-col h-full">
       <div className="flex items-center justify-between px-3 py-2 border-b border-panel-border bg-panel-header">
