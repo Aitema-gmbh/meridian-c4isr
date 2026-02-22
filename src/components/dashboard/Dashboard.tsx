@@ -175,9 +175,9 @@ const Dashboard = () => {
 
       if (intelResp.status === "fulfilled") {
         const resp = intelResp.value;
-        if (resp.status === 429) { toast.error("Rate limit exceeded."); return; }
-        if (resp.status === 402) { toast.error("AI credits exhausted."); return; }
-        if (resp.ok) data = await resp.json();
+        if (resp.status === 429) { toast.error("Rate limit exceeded. Using cached data."); }
+        else if (resp.status === 402) { toast.error("AI credits exhausted. Top up at Settings → Workspace → Usage. Using cached data."); }
+        else if (resp.ok) data = await resp.json();
       }
 
       // Merge Reddit items

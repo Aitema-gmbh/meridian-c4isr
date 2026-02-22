@@ -168,8 +168,8 @@ const ThreatEngine = ({ liveMetadata, marketData = [] }: { liveMetadata: LiveMet
         body: JSON.stringify({ indicators, marketContext }),
       });
 
-      if (resp.status === 429) { toast.error("Rate limit exceeded."); return; }
-      if (resp.status === 402) { toast.error("AI credits exhausted."); return; }
+      if (resp.status === 429) { toast.error("Rate limit exceeded."); setError("Rate limit exceeded. Try again later."); return; }
+      if (resp.status === 402) { toast.error("AI credits exhausted. Top up at Settings → Workspace → Usage."); setError("AI credits exhausted. Add credits in Settings → Workspace → Usage."); return; }
       if (!resp.ok) throw new Error("Threat engine error");
 
       const result = await resp.json();
