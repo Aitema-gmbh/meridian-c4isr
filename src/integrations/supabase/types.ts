@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_reports: {
+        Row: {
+          agent_name: string
+          confidence: string | null
+          created_at: string
+          data: Json
+          id: string
+          items_count: number | null
+          report_type: string
+          summary: string | null
+          threat_level: number | null
+        }
+        Insert: {
+          agent_name: string
+          confidence?: string | null
+          created_at?: string
+          data?: Json
+          id?: string
+          items_count?: number | null
+          report_type?: string
+          summary?: string | null
+          threat_level?: number | null
+        }
+        Update: {
+          agent_name?: string
+          confidence?: string | null
+          created_at?: string
+          data?: Json
+          id?: string
+          items_count?: number | null
+          report_type?: string
+          summary?: string | null
+          threat_level?: number | null
+        }
+        Relationships: []
+      }
       intel_snapshots: {
         Row: {
           article_count: number | null
