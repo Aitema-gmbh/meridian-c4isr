@@ -6,27 +6,39 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// Keywords that indicate Iran/geopolitical relevance
+const IRAN_KEYWORDS = [
+  "iran", "iranian", "hormuz", "persian gulf", "irgc", "tehran",
+  "nuclear", "jcpoa", "hezbollah", "houthi", "strait",
+  "middle east", "israel", "us iran", "sanction",
+  "oil", "crude", "opec", "war", "conflict", "military",
+  "strike", "attack", "bomb", "missile", "drone",
+  "gaza", "lebanon", "syria", "yemen", "gulf",
+];
+
+function isRelevant(text: string): boolean {
+  const lower = text.toLowerCase();
+  return IRAN_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const keywords = [
-      "iran", "war", "conflict", "middle east", "military",
-      "oil", "nuclear", "sanctions", "china", "taiwan", "russia", "ukraine",
-    ];
-
-    // Fetch multiple searches in parallel
-    const queries = keywords.slice(0, 6).map((kw) =>
-      fetch(
-        `https://gamma-api.polymarket.com/events?active=true&closed=false&limit=5&tag=${encodeURIComponent(kw)}`
-      ).then((r) => r.ok ? r.json() : []).catch(() => [])
+    // Fetch a large batch of active events across geopolitical tags
+    const tags = ["iran", "middle-east", "geopolitics", "oil", "war", "military", "nuclear", "israel"];
+    
+    const results = await Promise.all(
+      tags.map((tag) =>
+        fetch(`https://gamma-api.polymarket.com/events?active=true&closed=false&limit=15&tag=${encodeURIComponent(tag)}`)
+          .then((r) => r.ok ? r.json() : [])
+          .catch(() => [])
+      )
     );
 
-    const results = await Promise.all(queries);
-
-    // Deduplicate by event id
+    // Deduplicate and filter for Iran relevance
     const seen = new Set<string>();
     const markets: any[] = [];
 
@@ -37,9 +49,16 @@ serve(async (req) => {
         if (!id || seen.has(id)) continue;
         seen.add(id);
 
-        // Extract market data from the event
+        const slug = event.slug || id;
+        const url = `https://polymarket.com/event/${slug}`;
+        const title = event.title || "";
+
         const eventMarkets = event.markets || [];
         for (const market of eventMarkets) {
+          const question = market.question || title;
+          // Filter: must be Iran/geopolitically relevant
+          if (!isRelevant(question) && !isRelevant(title)) continue;
+
           const outcomePrices = market.outcomePrices
             ? (typeof market.outcomePrices === "string" ? JSON.parse(market.outcomePrices) : market.outcomePrices)
             : [];
@@ -49,7 +68,7 @@ serve(async (req) => {
 
           markets.push({
             id: market.id || id,
-            question: market.question || event.title || "Unknown",
+            question,
             category: event.tags?.[0]?.label || event.category || "Geopolitical",
             yesPrice: yesPrice !== null ? Math.round(yesPrice * 100) : null,
             noPrice: noPrice !== null ? Math.round(noPrice * 100) : null,
@@ -57,14 +76,15 @@ serve(async (req) => {
             liquidity: parseFloat(market.liquidity || "0"),
             endDate: market.endDate || event.endDate,
             active: market.active ?? true,
+            url,
           });
         }
 
-        // If no sub-markets, treat the event itself
-        if (eventMarkets.length === 0 && event.title) {
+        // If event title is relevant but has no sub-markets
+        if (eventMarkets.length === 0 && isRelevant(title)) {
           markets.push({
             id,
-            question: event.title,
+            question: title,
             category: event.tags?.[0]?.label || "Geopolitical",
             yesPrice: null,
             noPrice: null,
@@ -72,14 +92,15 @@ serve(async (req) => {
             liquidity: 0,
             endDate: event.endDate,
             active: true,
+            url,
           });
         }
       }
     }
 
-    // Sort by volume descending, take top 15
+    // Sort by volume descending
     markets.sort((a, b) => (b.volume || 0) - (a.volume || 0));
-    const topMarkets = markets.slice(0, 15);
+    const topMarkets = markets.slice(0, 20);
 
     return new Response(
       JSON.stringify({ markets: topMarkets, timestamp: new Date().toISOString() }),

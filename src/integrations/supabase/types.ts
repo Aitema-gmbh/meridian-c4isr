@@ -14,7 +14,102 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      intel_snapshots: {
+        Row: {
+          article_count: number | null
+          average_sentiment: number | null
+          created_at: string
+          dominant_category: string | null
+          flash_report: string | null
+          id: string
+          items: Json | null
+          mil_track_count: number | null
+          source_type: string | null
+        }
+        Insert: {
+          article_count?: number | null
+          average_sentiment?: number | null
+          created_at?: string
+          dominant_category?: string | null
+          flash_report?: string | null
+          id?: string
+          items?: Json | null
+          mil_track_count?: number | null
+          source_type?: string | null
+        }
+        Update: {
+          article_count?: number | null
+          average_sentiment?: number | null
+          created_at?: string
+          dominant_category?: string | null
+          flash_report?: string | null
+          id?: string
+          items?: Json | null
+          mil_track_count?: number | null
+          source_type?: string | null
+        }
+        Relationships: []
+      }
+      market_snapshots: {
+        Row: {
+          created_at: string
+          id: string
+          markets: Json | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          markets?: Json | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          markets?: Json | null
+        }
+        Relationships: []
+      }
+      threat_assessments: {
+        Row: {
+          analysis_narrative: string | null
+          created_at: string
+          cyber_attack: number | null
+          direct_confrontation: number | null
+          hormuz_closure: number | null
+          id: string
+          market_divergences: Json | null
+          proxy_escalation: number | null
+          raw_indicators: Json | null
+          tension_index: number | null
+          watchcon: string | null
+        }
+        Insert: {
+          analysis_narrative?: string | null
+          created_at?: string
+          cyber_attack?: number | null
+          direct_confrontation?: number | null
+          hormuz_closure?: number | null
+          id?: string
+          market_divergences?: Json | null
+          proxy_escalation?: number | null
+          raw_indicators?: Json | null
+          tension_index?: number | null
+          watchcon?: string | null
+        }
+        Update: {
+          analysis_narrative?: string | null
+          created_at?: string
+          cyber_attack?: number | null
+          direct_confrontation?: number | null
+          hormuz_closure?: number | null
+          id?: string
+          market_divergences?: Json | null
+          proxy_escalation?: number | null
+          raw_indicators?: Json | null
+          tension_index?: number | null
+          watchcon?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

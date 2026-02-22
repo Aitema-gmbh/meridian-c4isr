@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import ThreatMatrix from "./ThreatMatrix";
 import IntelFeed from "./IntelFeed";
 import ThreatEngine from "./ThreatEngine";
@@ -10,18 +11,21 @@ import PredictionMarkets from "./PredictionMarkets";
 
 const DEDICATION = "Dedicated to Manos, Ghassan and Fedo";
 const LIVE_INTEL_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/live-intel`;
+const REDDIT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reddit-intel`;
 const MARKETS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/prediction-markets`;
 
 interface IntelItem {
   id: number;
   timestamp: string;
   source: string;
+  sourceUrl?: string;
   priority: "HIGH" | "MEDIUM" | "LOW";
   content: string;
   entities: string[];
   sentiment: number;
   threat_tag?: string;
   confidence?: string;
+  isReddit?: boolean;
 }
 
 interface LiveIntelData {
@@ -46,6 +50,7 @@ interface MarketItem {
   liquidity: number;
   endDate: string;
   active: boolean;
+  url?: string;
 }
 
 interface MarketsData {
@@ -53,7 +58,7 @@ interface MarketsData {
   timestamp: string;
 }
 
-const DataTicker = ({ liveData, marketsData }: { liveData: LiveIntelData | null; marketsData: MarketsData | null }) => {
+const DataTicker = ({ liveData, marketsData, lastAnalyzed }: { liveData: LiveIntelData | null; marketsData: MarketsData | null; lastAnalyzed: string | null }) => {
   const [time, setTime] = useState(new Date());
 
   useEffect(() => {
@@ -63,15 +68,18 @@ const DataTicker = ({ liveData, marketsData }: { liveData: LiveIntelData | null;
 
   const m = liveData?.metadata;
   const topMarket = marketsData?.markets?.[0];
+  const agoMinutes = lastAnalyzed ? Math.round((Date.now() - new Date(lastAnalyzed).getTime()) / 60000) : null;
   const items = [
     "CENTCOM AOR: WATCHCON 2",
+    agoMinutes !== null ? `LAST AGENT RUN: ${agoMinutes}m AGO` : "AGENT: AWAITING FIRST RUN",
     m ? `ADS-B: ${m.milTrackCount} MIL TRACKS ACTIVE` : "ADS-B: ACQUIRING...",
     m ? `GDELT: ${m.articleCount} CONFLICT ARTICLES (3 STREAMS)` : "GDELT: LOADING...",
     m ? `OSINT SENTIMENT: ${m.averageSentiment.toFixed(2)}` : "OSINT: ANALYZING...",
     m?.dominantCategory ? `DOMINANT THREAT: ${m.dominantCategory}` : "THREAT: CALCULATING...",
-    topMarket ? `POLYMARKET TOP: ${topMarket.question.slice(0, 40)}... ${topMarket.yesPrice ?? '?'}%` : "POLYMARKET: LOADING...",
+    topMarket ? `POLYMARKET: ${topMarket.question.slice(0, 40)}... ${topMarket.yesPrice ?? '?'}%` : "POLYMARKET: LOADING...",
     "MARITIME: AIS GAPS DETECTED — HORMUZ WEST",
     "CYBER: APT CAMPAIGNS ACTIVE",
+    "REDDIT: SOCIAL SIGNALS MONITORED",
   ];
 
   return (
@@ -83,8 +91,8 @@ const DataTicker = ({ liveData, marketsData }: { liveData: LiveIntelData | null;
       <div className="flex-1 overflow-hidden">
         <motion.div
           className="flex items-center gap-8 whitespace-nowrap"
-          animate={{ x: [0, -2000] }}
-          transition={{ duration: 40, repeat: Infinity, ease: "linear" }}
+          animate={{ x: [0, -2400] }}
+          transition={{ duration: 45, repeat: Infinity, ease: "linear" }}
         >
           {[...items, ...items].map((item, i) => (
             <span key={i} className="text-[10px] font-mono text-muted-foreground">
@@ -97,7 +105,7 @@ const DataTicker = ({ liveData, marketsData }: { liveData: LiveIntelData | null;
         <span className="text-[10px] font-mono text-muted-foreground">
           {time.toLocaleTimeString("en-US", { hour12: false })}Z
         </span>
-        <span className="text-[10px] font-mono text-primary/50">MERIDIAN v3.0</span>
+        <span className="text-[10px] font-mono text-primary/50">MERIDIAN v4.0</span>
       </div>
     </div>
   );
@@ -113,23 +121,88 @@ const Dashboard = () => {
   const [marketsData, setMarketsData] = useState<MarketsData | null>(null);
   const [intelLoading, setIntelLoading] = useState(false);
   const [marketsLoading, setMarketsLoading] = useState(false);
+  const [lastAnalyzed, setLastAnalyzed] = useState<string | null>(null);
+
+  // Load latest data from DB on mount (instant)
+  const loadFromDB = useCallback(async () => {
+    try {
+      const [intelSnap, marketSnap] = await Promise.all([
+        supabase.from("intel_snapshots").select("*").order("created_at", { ascending: false }).limit(1),
+        supabase.from("market_snapshots").select("*").order("created_at", { ascending: false }).limit(1),
+      ]);
+
+      if (intelSnap.data?.[0]) {
+        const snap = intelSnap.data[0] as any;
+        setLiveData({
+          items: (snap.items || []) as IntelItem[],
+          flashReport: snap.flash_report,
+          metadata: {
+            articleCount: snap.article_count || 0,
+            milTrackCount: snap.mil_track_count || 0,
+            averageSentiment: Number(snap.average_sentiment) || -0.5,
+            timestamp: snap.created_at,
+            dominantCategory: snap.dominant_category,
+          },
+        });
+        setLastAnalyzed(snap.created_at);
+      }
+
+      if (marketSnap.data?.[0]) {
+        const snap = marketSnap.data[0] as any;
+        setMarketsData({
+          markets: (snap.markets || []) as MarketItem[],
+          timestamp: snap.created_at,
+        });
+      }
+    } catch (e) {
+      console.error("DB load error:", e);
+    }
+  }, []);
 
   const fetchLiveIntel = useCallback(async () => {
     setIntelLoading(true);
     try {
-      const resp = await fetch(LIVE_INTEL_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
-        body: JSON.stringify({}),
-      });
-      if (resp.status === 429) { toast.error("Rate limit exceeded."); return; }
-      if (resp.status === 402) { toast.error("AI credits exhausted."); return; }
-      if (!resp.ok) throw new Error("Live intel fetch failed");
-      const data: LiveIntelData = await resp.json();
-      setLiveData(data);
+      // Fetch GDELT intel + Reddit in parallel
+      const [intelResp, redditResp] = await Promise.allSettled([
+        fetch(LIVE_INTEL_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
+          body: JSON.stringify({}),
+        }),
+        fetch(REDDIT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
+          body: JSON.stringify({}),
+        }),
+      ]);
+
+      let data: LiveIntelData | null = null;
+
+      if (intelResp.status === "fulfilled") {
+        const resp = intelResp.value;
+        if (resp.status === 429) { toast.error("Rate limit exceeded."); return; }
+        if (resp.status === 402) { toast.error("AI credits exhausted."); return; }
+        if (resp.ok) data = await resp.json();
+      }
+
+      // Merge Reddit items
+      if (redditResp.status === "fulfilled" && redditResp.value.ok) {
+        try {
+          const redditData = await redditResp.value.json();
+          const redditItems = (redditData.items || []) as IntelItem[];
+          if (data) {
+            data.items = [...data.items, ...redditItems];
+          } else {
+            data = {
+              items: redditItems,
+              flashReport: null,
+              metadata: { articleCount: 0, milTrackCount: 0, averageSentiment: 0, timestamp: new Date().toISOString() },
+            };
+          }
+        } catch {}
+      }
+
+      if (data) setLiveData(data);
     } catch (e) {
       console.error("Live intel error:", e);
       toast.error("Failed to fetch live intelligence.");
@@ -143,10 +216,7 @@ const Dashboard = () => {
     try {
       const resp = await fetch(MARKETS_URL, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
         body: JSON.stringify({}),
       });
       if (!resp.ok) throw new Error("Markets fetch failed");
@@ -160,12 +230,15 @@ const Dashboard = () => {
   }, []);
 
   useEffect(() => {
-    fetchLiveIntel();
-    fetchMarkets();
+    // Load cached DB data first, then fetch fresh
+    loadFromDB().then(() => {
+      fetchLiveIntel();
+      fetchMarkets();
+    });
     const intelInterval = setInterval(fetchLiveIntel, 300000);
     const marketsInterval = setInterval(fetchMarkets, 120000);
     return () => { clearInterval(intelInterval); clearInterval(marketsInterval); };
-  }, [fetchLiveIntel, fetchMarkets]);
+  }, [loadFromDB, fetchLiveIntel, fetchMarkets]);
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -207,7 +280,7 @@ const Dashboard = () => {
       </div>
 
       {/* Data ticker */}
-      <DataTicker liveData={liveData} marketsData={marketsData} />
+      <DataTicker liveData={liveData} marketsData={marketsData} lastAnalyzed={lastAnalyzed} />
 
       {/* Main content - 3 column layout */}
       <div className="flex-1 grid grid-cols-12 gap-px bg-panel-border overflow-hidden">
@@ -259,7 +332,7 @@ const Dashboard = () => {
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              MARKETS
+              IRAN MARKETS
             </button>
           </div>
 
