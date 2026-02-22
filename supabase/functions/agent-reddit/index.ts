@@ -148,6 +148,16 @@ serve(async (req) => {
       items_count: items.length,
     });
 
+    // Welford baseline update
+    const now = new Date();
+    const dow = now.getUTCDay();
+    const hour = now.getUTCHours();
+    await supabase.from("agent_baselines").upsert({
+      agent_name: "reddit", metric_name: "signal_count",
+      day_of_week: dow, hour_of_day: hour,
+      mean: items.length, variance: 0, count: 1, updated_at: now.toISOString(),
+    }, { onConflict: "agent_name,metric_name,day_of_week,hour_of_day" });
+
     console.log("[agent-reddit] Report saved.", items.length, "signals");
     return new Response(JSON.stringify({ success: true, signalCount: items.length, signal: analyzed.overallSignalStrength }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

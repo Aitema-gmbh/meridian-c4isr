@@ -134,6 +134,23 @@ serve(async (req) => {
     if (error) console.error("[agent-naval] DB error:", error);
     else console.log("[agent-naval] Report saved. MAI:", maritimeAnomalyIndex);
 
+    // Welford baseline update
+    const now = new Date();
+    const dow = now.getUTCDay();
+    const hour = now.getUTCHours();
+    await Promise.all([
+      supabase.from("agent_baselines").upsert({
+        agent_name: "naval", metric_name: "maritime_anomaly_index",
+        day_of_week: dow, hour_of_day: hour,
+        mean: maritimeAnomalyIndex, variance: 0, count: 1, updated_at: now.toISOString(),
+      }, { onConflict: "agent_name,metric_name,day_of_week,hour_of_day" }),
+      supabase.from("agent_baselines").upsert({
+        agent_name: "naval", metric_name: "vessel_count",
+        day_of_week: dow, hour_of_day: hour,
+        mean: military.length, variance: 0, count: 1, updated_at: now.toISOString(),
+      }, { onConflict: "agent_name,metric_name,day_of_week,hour_of_day" }),
+    ]);
+
     return new Response(JSON.stringify({ success: true, maritimeAnomalyIndex, vesselCount: military.length, summary }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

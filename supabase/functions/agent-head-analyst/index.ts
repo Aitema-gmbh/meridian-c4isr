@@ -204,6 +204,106 @@ serve(async (req) => {
       source_type: "head-analyst",
     });
 
+    // ========== CII: Country Instability Index ==========
+    const FOCUS_COUNTRIES = [
+      { code: "IR", name: "Iran", keywords: ["iran", "iranian", "tehran", "irgc", "khamenei", "hormuz", "persian gulf"] },
+      { code: "IL", name: "Israel", keywords: ["israel", "israeli", "idf", "mossad", "tel aviv", "netanyahu"] },
+      { code: "SA", name: "Saudi Arabia", keywords: ["saudi", "riyadh", "mbs", "aramco"] },
+      { code: "AE", name: "UAE", keywords: ["uae", "emirates", "abu dhabi", "dubai"] },
+      { code: "YE", name: "Yemen", keywords: ["yemen", "houthi", "ansar allah", "sanaa", "hodeidah"] },
+      { code: "IQ", name: "Iraq", keywords: ["iraq", "iraqi", "baghdad", "pmf", "hashd"] },
+      { code: "QA", name: "Qatar", keywords: ["qatar", "doha", "al udeid"] },
+      { code: "BH", name: "Bahrain", keywords: ["bahrain", "manama", "5th fleet"] },
+      { code: "OM", name: "Oman", keywords: ["oman", "muscat"] },
+      { code: "KW", name: "Kuwait", keywords: ["kuwait", "arifjan"] },
+    ];
+
+    // Get previous CII scores for trend
+    const { data: prevScores } = await supabase
+      .from("country_scores")
+      .select("country_code, cii_score")
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    const prevScoreMap: Record<string, number> = {};
+    if (prevScores) {
+      for (const s of prevScores as any[]) {
+        if (!prevScoreMap[s.country_code]) prevScoreMap[s.country_code] = Number(s.cii_score);
+      }
+    }
+
+    // Calculate CII per country
+    const countryScores = FOCUS_COUNTRIES.map(country => {
+      const kw = country.keywords;
+      const matchText = (text: string) => kw.some(k => text.toLowerCase().includes(k));
+
+      // OSINT score (0-30): count mentions in OSINT articles
+      let osintMentions = 0;
+      if (agentReports.osint?.data?.items) {
+        osintMentions = (agentReports.osint.data.items as any[]).filter((item: any) =>
+          matchText(item.content || "") || (item.entities || []).some((e: string) => matchText(e))
+        ).length;
+      }
+      const osintScore = Math.min(osintMentions * 8, 30);
+
+      // Reddit score (0-20)
+      let redditMentions = 0;
+      if (agentReports.reddit?.data?.items) {
+        redditMentions = (agentReports.reddit.data.items as any[]).filter((item: any) =>
+          matchText(item.content || "") || (item.entities || []).some((e: string) => matchText(e))
+        ).length;
+      }
+      const redditScore = Math.min(redditMentions * 5, 20);
+
+      // Military score (0-25): based on flight/naval anomaly if relevant
+      let militaryScore = 0;
+      if (["IR", "SA", "AE", "BH", "QA", "KW", "OM"].includes(country.code)) {
+        militaryScore = Math.min((agentReports.flights?.data?.anomalyIndex || 0) * 0.15 +
+          (agentReports.naval?.data?.maritimeAnomalyIndex || 0) * 0.1, 25);
+      }
+
+      // Market score (0-15): prediction market odds
+      let marketScore = 0;
+      if (agentReports.markets?.data?.markets) {
+        const relevantMarkets = (agentReports.markets.data.markets as any[]).filter((m: any) =>
+          matchText(m.question || "")
+        );
+        const maxProb = relevantMarkets.reduce((max: number, m: any) => Math.max(max, m.yesPrice || 0), 0);
+        marketScore = Math.min(maxProb * 0.15, 15);
+      }
+
+      // Wiki score (0-10)
+      let wikiScore = 0;
+      if (agentReports.wiki?.data?.topSpikes) {
+        const relevantSpikes = (agentReports.wiki.data.topSpikes as any[]).filter((s: any) =>
+          matchText(s.article || "")
+        );
+        const maxZ = relevantSpikes.reduce((max: number, s: any) => Math.max(max, s.zScore || 0), 0);
+        wikiScore = Math.min(maxZ * 5, 10);
+      }
+
+      const rawCii = Math.round(osintScore + redditScore + militaryScore + marketScore + wikiScore);
+      const ciiScore = Math.min(100, rawCii);
+      const prevCii = prevScoreMap[country.code] || 0;
+      const trend24h = ciiScore - prevCii;
+
+      return {
+        country_code: country.code,
+        country_name: country.name,
+        cii_score: ciiScore,
+        signal_breakdown: { osint: osintScore, reddit: redditScore, military: militaryScore, market: marketScore, wiki: wikiScore },
+        trend_24h: trend24h,
+        trend_7d: 0,
+      };
+    });
+
+    // Insert CII scores
+    if (countryScores.length > 0) {
+      const { error: ciiError } = await supabase.from("country_scores").insert(countryScores);
+      if (ciiError) console.error("[agent-head-analyst] CII insert error:", ciiError);
+      else console.log("[agent-head-analyst] CII scores saved for", countryScores.length, "countries");
+    }
+
     console.log("[agent-head-analyst] Assessment saved. Tension:", assessment.tensionIndex, "WATCHCON:", assessment.watchcon);
 
     return new Response(JSON.stringify({

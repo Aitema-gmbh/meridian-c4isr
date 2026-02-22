@@ -157,6 +157,16 @@ serve(async (req) => {
       items_count: relevantItems.length,
     });
 
+    // Welford baseline update
+    const now = new Date();
+    const dow = now.getUTCDay();
+    const hour = now.getUTCHours();
+    await supabase.from("agent_baselines").upsert({
+      agent_name: "pentagon", metric_name: "activity_index",
+      day_of_week: dow, hour_of_day: hour,
+      mean: analysis.pentagonActivityIndex, variance: 0, count: 1, updated_at: now.toISOString(),
+    }, { onConflict: "agent_name,metric_name,day_of_week,hour_of_day" });
+
     console.log("[agent-pentagon] Report saved. Activity:", analysis.pentagonActivityIndex);
     return new Response(JSON.stringify({ success: true, activityIndex: analysis.pentagonActivityIndex }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
