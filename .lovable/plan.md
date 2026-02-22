@@ -1,91 +1,86 @@
 
-# Echte AIS-Daten via aisstream.io integrieren
 
-## Datenquelle: aisstream.io (kostenlos)
+# AIS-Daten Integration -- Realitaetscheck und Plan
 
-**aisstream.io** bietet einen kostenlosen WebSocket-Stream mit echten, weltweiten AIS-Schiffsdaten. Man braucht nur einen kostenlosen API-Key (Registrierung unter aisstream.io).
+## Wichtige Erkenntnis: OpenShipData funktioniert NICHT fuer euer Gebiet
 
-## Architektur
+Nach der Recherche muss ich ehrlich sein: **OpenShipData (MarinePlan)** deckt nur **europaeische Binnengewaesser** ab (hauptsaechlich Niederlande). Fuer den Persischen Golf, Rotes Meer und Suez gibt es dort keine Daten.
 
-Da WebSocket-Verbindungen nicht direkt aus einer Edge Function aufrechterhalten werden koennen (Edge Functions sind kurzlebig), gibt es zwei Ansaetze:
+Es gibt **keine einzige komplett kostenlose, globale AIS-API ohne API-Key**. Die Optionen sind:
 
-**Gewaehlt: Hybrid-Ansatz** -- Die Edge Function `ais-proxy` wird umgebaut:
-1. Sie verbindet sich bei jedem Aufruf kurz per WebSocket zu aisstream.io
-2. Sammelt fuer 3-5 Sekunden AIS-Nachrichten aus den relevanten Regionen (Persischer Golf, Rotes Meer, Suez)
-3. Gibt die gesammelten Schiffspositionen als JSON zurueck
-4. Fallback: Wenn keine Daten kommen oder kein API-Key vorhanden, werden die bestehenden Mock-Daten zurueckgegeben
+| Quelle | Kosten | API-Key | Abdeckung | Fazit |
+|--------|--------|---------|-----------|-------|
+| OpenShipData | Frei | Keiner | Nur Europa/NL | Unbrauchbar fuer CENTCOM |
+| AISHub | Frei | Ja + eigene AIS-Station | Global | Zu kompliziert |
+| aisstream.io | Frei | Ja (kostenlose Registrierung) | Global, Echtzeit | Beste Option |
+| BarentsWatch | Frei | Ja | Nur Norwegen | Unbrauchbar |
 
-## Aenderungen
+## Militaerschiffe: Warum sie separat bleiben muessen
 
-### 1. API-Key als Secret hinzufuegen
-- Der User muss sich bei aisstream.io registrieren (kostenlos)
-- API-Key wird als `AISSTREAM_API_KEY` Secret gespeichert
+Militaerschiffe (USS Eisenhower, USS Mason, etc.) senden in der Realitaet **kein AIS-Signal** oder schalten es bewusst ab. Sie tauchen in keinem freien AIS-Feed auf. Deshalb:
 
-### 2. Edge Function `supabase/functions/ais-proxy/index.ts` umbauen
-- WebSocket-Verbindung zu `wss://stream.aisstream.io/v0/stream`
-- Subscription-Message mit Bounding Boxes fuer relevante Gebiete:
-  - Persischer Golf / Strait of Hormuz: [[23, 47], [30, 60]]
-  - Rotes Meer / Bab el-Mandeb: [[11, 40], [30, 45]]
-  - Suez-Kanal: [[29, 32], [32, 35]]
-- AIS Position Reports (Nachrichtentyp 1, 2, 3, 18) parsen
-- Schiffe in das bestehende VesselData-Format mappen (mmsi, name, lat, lon, speed, course, etc.)
-- Timeout nach 5 Sekunden, dann Response mit allen gesammelten Schiffen
-- Fallback auf Mock-Daten wenn kein API-Key oder Fehler
+- Militaerschiffe bleiben als **kuratierte, akkurate Datenbank** im Code
+- Positionen basieren auf aktuellen OSINT-Quellen (Carrier Strike Group Tracking)
+- Sie werden als eigener Layer ueber den Live-Daten angezeigt
 
-### 3. Frontend `ThreatMatrix.tsx` -- minimale Aenderungen
-- Das Frontend braucht keine Aenderung, da das Datenformat gleich bleibt
-- Optional: Anzeige ob "LIVE" oder "SIMULATED" Daten
+## Vorgeschlagener Plan
 
-## Technische Details
+### Schritt 1: Militaerschiff-Datenbank erweitern und verbessern
 
-### aisstream.io WebSocket Subscription Message
+Die bestehenden 3 Militaerschiffe werden auf eine **umfassende, akkurate Liste** erweitert:
+
+**US Navy (5th Fleet / CENTCOM):**
+- CVN-69 USS Dwight D. Eisenhower (Carrier)
+- DDG-87 USS Mason (Destroyer)
+- CG-70 USS Lake Erie (Cruiser)
+- DDG-114 USS Ralph Johnson (Destroyer)
+- LHD-7 USS Iwo Jima (Amphibious)
+
+**Allied Forces:**
+- HNLMS Tromp (Netherlands, Frigate)
+- HMS Diamond (UK, Destroyer)
+- FS Alsace (France, Frigate)
+- ITS Virginio Fasan (Italy, Frigate)
+
+**Andere Akteure:**
+- IRIS Alborz (Iran, Frigate)
+- IRIS Dena (Iran, Destroyer)
+- PNS Tughril (Pakistan, Frigate)
+
+Jedes Schiff bekommt akkurate Daten: Typ, Klasse, Heimathafen, Flagge, Laenge, und realistische Patrouillen-Positionen.
+
+### Schritt 2: aisstream.io fuer Live-Handelschiffe (mit API-Key)
+
+Die Edge Function `ais-proxy` wird so umgebaut:
+
+1. **Militaerschiffe**: Immer aus der kuratierten Datenbank (mit leichtem Positions-Drift)
+2. **Handelschiffe**: Live von aisstream.io wenn API-Key vorhanden
+3. **Fallback**: Mock-Handelschiffe wenn kein API-Key
+
+Das Response-Format:
 ```text
 {
-  "Apikey": "<KEY>",
-  "BoundingBoxes": [
-    [[23, 47], [30, 60]],    // Persian Gulf
-    [[11, 40], [30, 45]],    // Red Sea
-    [[29, 32], [32, 35]]     // Suez
-  ]
+  vessels: [...],           // Alle Schiffe kombiniert
+  military: [...],          // Nur Militaer (immer vorhanden)
+  commercial: [...],        // Handelschiffe (live oder mock)
+  source: "live" | "simulated",
+  total: number
 }
 ```
 
-### AIS Message Mapping
-```text
-AIS PositionReport -> VesselData:
-  - MessageID -> (filter: only 1,2,3,18)
-  - UserID -> mmsi
-  - Latitude -> lat
-  - Longitude -> lon
-  - Sog -> speed (knots)
-  - Cog -> course
-  - TrueHeading -> heading
-  - ShipName (from MetaData) -> name
-  - ShipType -> type/category mapping
-  - Flag (from MetaData) -> flag
-  - Destination (from MetaData) -> destination
-```
+### Schritt 3: Frontend "LIVE/SIM" Badge
 
-### Edge Function Ablauf
-```text
-Request kommt rein
-  -> Pruefe AISSTREAM_API_KEY Secret
-  -> Wenn vorhanden:
-      -> WebSocket oeffnen zu aisstream.io
-      -> Subscription senden mit Bounding Boxes
-      -> 4 Sekunden lang Nachrichten sammeln
-      -> Deduplizieren nach MMSI (neueste Position behalten)
-      -> Als VesselData[] zurueckgeben + source: "live"
-  -> Wenn nicht vorhanden oder Fehler:
-      -> Mock-Daten mit Drift zurueckgeben + source: "simulated"
-```
+Im ThreatMatrix-Header wird angezeigt ob die Handelschiffe live oder simuliert sind.
 
-### Dateien die geaendert werden
+## Dateien die geaendert werden
 
 | Datei | Aenderung |
 |-------|-----------|
-| `supabase/functions/ais-proxy/index.ts` | Komplett umbauen: WebSocket zu aisstream.io, Fallback auf Mock-Daten |
-| `src/components/dashboard/ThreatMatrix.tsx` | Kleiner Zusatz: "LIVE" vs "SIM" Badge im Header anzeigen |
+| `supabase/functions/ais-proxy/index.ts` | Komplett umgebaut: Erweiterte Militaer-DB + aisstream.io WebSocket + Fallback |
+| `src/components/dashboard/ThreatMatrix.tsx` | LIVE/SIM Badge im Header |
 
-### Voraussetzung
-- User muss sich bei aisstream.io registrieren und den API-Key als Secret `AISSTREAM_API_KEY` eingeben
+## Voraussetzung
+
+- Fuer Live-Handelschiffe: Kostenlose Registrierung bei aisstream.io und API-Key als Secret `AISSTREAM_API_KEY` hinterlegen
+- Militaerschiffe funktionieren sofort ohne API-Key
+
