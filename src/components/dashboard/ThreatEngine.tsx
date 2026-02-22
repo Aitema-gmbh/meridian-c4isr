@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
+import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 import { MOCK_TENSION_HISTORY } from "@/data/mockData";
 
 const THREAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/threat-engine`;
@@ -184,7 +184,7 @@ const ThreatEngine = ({ liveMetadata }: { liveMetadata: LiveMetadata | null }) =
                   </defs>
                   <XAxis dataKey="time" tick={{ fontSize: 9, fill: "hsl(200 10% 45%)" }} axisLine={false} tickLine={false} />
                   <YAxis domain={[30, 80]} hide />
-                  <Tooltip
+                  <RechartsTooltip
                     contentStyle={{
                       background: "hsl(220 18% 7%)",
                       border: "1px solid hsl(220 15% 14%)",
