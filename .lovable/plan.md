@@ -1,165 +1,85 @@
 
-# Enhanced Intelligence Platform: Iran-Focused Markets, Source Links, Social Media, Database + Hourly Agent
 
-## Overview
-This upgrade addresses 5 key requests: (1) clickable source links on intel items, (2) Polymarket data filtered to Iran/geopolitical relevance, (3) Reddit social media integration, (4) database persistence for all intel, and (5) an automated intelligence agent that re-analyzes every hour via a scheduled job.
+# E2E Test Results and Fixes Required
 
-Note on X/Twitter: The Twitter API requires paid API keys ($100+/month). Reddit's public API is free and provides similar social signal intelligence. If you want X integration later, we can add it once you have Twitter API credentials.
+## Test Results Summary
 
----
-
-## Part 1: Fix Polymarket -- Iran-Focused Search
-
-**Problem:** Current tag-based queries return irrelevant results (MicroStrategy, deportation stats).
-
-**Fix:** Switch from `GET /events?tag=...` to Polymarket's `/public-search?q=...` endpoint which searches by keyword across event titles.
-
-**Changes to `supabase/functions/prediction-markets/index.ts`:**
-- Replace tag-based queries with keyword search queries: "iran", "iran war", "middle east conflict", "strait of hormuz", "oil price", "nuclear deal", "sanctions iran"
-- Use `GET https://gamma-api.polymarket.com/public-search?q=iran&events_status=active` 
-- Filter results to only geopolitically relevant markets
-- Add `url` field to each market pointing to `https://polymarket.com/event/{slug}`
+| Component | Status | Details |
+|-----------|--------|---------|
+| Live Intel (GDELT + AI) | WORKING | Returns 12-18 articles with source URLs, flash report, threat tags |
+| Threat Engine | WORKING | Returns tension index, WATCHCON, probabilities, market divergences |
+| Reddit Intel | BROKEN | Returns 0 items every time (Reddit blocks server-side requests) |
+| Prediction Markets | PARTIALLY BROKEN | Returns only 3 China/India results -- NOT Iran-focused, no Iran markets found |
+| Intel Agent (hourly) | WORKING (partial) | Runs successfully, stores in DB, but inherits Reddit (0 posts) and GDELT (0 articles from edge function context) issues |
+| Database Storage | WORKING | All 3 tables populated after intel-agent run |
+| Cron Job | WORKING | Configured hourly at `0 * * * *` |
+| ADS-B Map | BROKEN (client) | `api.adsb.lol` blocked by browser CORS -- every request fails with "Load failed" |
+| Dashboard UI | WORKING | 3-column layout, tabs, ticker all render |
 
 ---
 
-## Part 2: Source Links on Intel Items
+## Issues to Fix
 
-**Changes to `supabase/functions/live-intel/index.ts`:**
-- Pass the original article `url` from GDELT data through to the AI analysis
-- Add `sourceUrl` field to each intel item in the tool call schema
-- AI preserves the original article URL
+### Issue 1: Prediction Markets -- No Iran Results
+**Problem:** Polymarket simply does not have active Iran-specific markets. The tag-based search returns unrelated results (MicroStrategy, Trump deportation). The only geopolitical match is "China x India military clash."
 
-**Changes to `src/components/dashboard/IntelFeed.tsx`:**
-- Make the source name a clickable link opening in a new tab
-- Add a small external link icon next to the source
+**Fix:** Broaden the search to include all geopolitical/conflict markets (not just Iran). Change the filter to accept any conflict/military/geopolitical market. Also try the `/events` endpoint with `title_contains` parameter for better keyword matching.
 
----
+### Issue 2: Reddit Intel Returns Empty
+**Problem:** Reddit's public JSON API returns 403/429 when called from server-side (edge functions). The `reddit-intel` function fetches 0 posts from all 3 subreddits.
 
-## Part 3: Reddit Social Media Intelligence
+**Fix:** Add proper Reddit OAuth app-only authentication (client credentials) or use a fallback: fetch Reddit data inside the `intel-agent` function which already runs server-side and may have different rate limits. Alternatively, add a `User-Agent` that Reddit accepts and handle the 429 with retry logic.
 
-**New edge function: `supabase/functions/reddit-intel/index.ts`**
-- Fetches from Reddit's free public JSON API (no auth needed):
-  - `reddit.com/r/geopolitics/search.json?q=iran&sort=new&limit=10`
-  - `reddit.com/r/worldnews/search.json?q=iran+OR+hormuz&sort=new&limit=10`
-  - `reddit.com/r/iran/hot.json?limit=10`
-- Returns structured social signal data: title, score, comments, url, subreddit
-- Runs through AI to extract sentiment and relevance
+### Issue 3: ADS-B Blocked by Browser CORS
+**Problem:** `api.adsb.lol` does not allow cross-origin requests from the browser. Every 30-second poll fails with "Load failed."
 
-**New component: Social signals integrated into IntelFeed**
-- Reddit posts appear in the intel feed with a "REDDIT" source tag and direct link
-- Distinguished by a purple Reddit icon/tag
+**Fix:** Move the ADS-B fetch to the server side -- either into the `live-intel` edge function or `intel-agent`. The ThreatMatrix component should read aircraft positions from the edge function response rather than calling `api.adsb.lol` directly from the browser.
+
+### Issue 4: Intel Agent Gets 0 GDELT Articles
+**Problem:** When the intel-agent runs from the edge function, GDELT returns 0 articles (possibly due to edge function timeout or GDELT rate limiting from the Supabase IP).
+
+**Fix:** Add retry logic and longer timeouts for GDELT calls in the intel-agent. Also add error logging for each individual GDELT response status.
 
 ---
 
-## Part 4: Database Persistence
+## Proposed Changes
 
-**New database tables:**
+### 1. Fix Prediction Markets (`supabase/functions/prediction-markets/index.ts`)
+- Use `title_contains` parameter: `GET /events?active=true&closed=false&limit=20&title_contains=iran`
+- Also search for: "war", "conflict", "middle east", "nuclear", "sanctions", "oil crisis", "hormuz"
+- Run multiple keyword searches in parallel and deduplicate
+- If no Iran-specific markets exist, return broader geopolitical conflict markets with a flag
 
-1. **`intel_snapshots`** -- stores each hourly analysis run
-   - `id` (uuid, primary key)
-   - `created_at` (timestamp)
-   - `flash_report` (text)
-   - `article_count` (integer)
-   - `mil_track_count` (integer)
-   - `average_sentiment` (numeric)
-   - `dominant_category` (text)
-   - `items` (jsonb -- array of intel items)
-   - `source_type` (text -- 'gdelt', 'reddit', 'combined')
+### 2. Fix Reddit Intel (`supabase/functions/reddit-intel/index.ts`)
+- Add proper HTTP headers that Reddit accepts (valid User-Agent with contact info)
+- Add retry with exponential backoff on 429
+- Add detailed error logging per subreddit
+- Fallback: if all subreddits fail, return empty with a clear error message
 
-2. **`market_snapshots`** -- stores Polymarket snapshots
-   - `id` (uuid, primary key)
-   - `created_at` (timestamp)
-   - `markets` (jsonb -- array of market data)
+### 3. Fix ADS-B Browser CORS (`src/components/dashboard/ThreatMatrix.tsx`)
+- Remove direct `api.adsb.lol` fetch from the browser component
+- Create a simple proxy edge function `supabase/functions/adsb-proxy/index.ts` that fetches from `api.adsb.lol` server-side
+- ThreatMatrix calls the proxy instead
 
-3. **`threat_assessments`** -- stores threat engine results
-   - `id` (uuid, primary key)
-   - `created_at` (timestamp)
-   - `tension_index` (numeric)
-   - `watchcon` (text)
-   - `hormuz_closure` (numeric)
-   - `cyber_attack` (numeric)
-   - `proxy_escalation` (numeric)
-   - `direct_confrontation` (numeric)
-   - `analysis_narrative` (text)
-   - `market_divergences` (jsonb)
-   - `raw_indicators` (jsonb)
+### 4. Fix Intel Agent GDELT Issue (`supabase/functions/intel-agent/index.ts`)
+- Add individual response status logging for each GDELT query
+- Add 15-second timeout per request
+- Add retry logic for failed GDELT fetches
 
-All tables will have RLS disabled since this is public intelligence data with no user-specific access control needed.
+### 5. Dashboard: Load DB Data on Mount (`src/components/dashboard/Dashboard.tsx`)
+- The DB loading already works but tables were empty until first intel-agent run
+- No code change needed -- now that data is in DB, it will load on mount
 
 ---
 
-## Part 5: Hourly Intelligence Agent (Cron Job)
-
-**New edge function: `supabase/functions/intel-agent/index.ts`**
-- Orchestrator function that runs every hour
-- Calls all data sources in parallel: GDELT (3 queries), ADS-B, Reddit (3 subreddits), Polymarket
-- Sends combined data to AI for comprehensive analysis
-- Stores results in all 3 database tables
-- Generates a comprehensive hourly SITREP stored in `intel_snapshots`
-
-**Cron setup:**
-- Uses `pg_cron` + `pg_net` extensions
-- Scheduled to run every hour: `0 * * * *`
-- Calls the `intel-agent` edge function via HTTP POST
-
-**Dashboard changes:**
-- On load, first reads latest data from database (instant)
-- Then fetches fresh data in background
-- Shows "Last analyzed: X minutes ago" indicator
-- Historical data available for trend analysis in ThreatEngine charts
-
----
-
-## File Changes Summary
+## File Changes
 
 | File | Action | Description |
 |------|--------|-------------|
-| `supabase/functions/prediction-markets/index.ts` | REWRITE | Use `/public-search` for Iran-focused results, add URLs |
-| `supabase/functions/live-intel/index.ts` | MODIFY | Add `sourceUrl` to items from GDELT article URLs |
-| `supabase/functions/reddit-intel/index.ts` | CREATE | Reddit public API fetcher + AI analysis |
-| `supabase/functions/intel-agent/index.ts` | CREATE | Hourly orchestrator that fetches all sources, analyzes, stores |
-| `src/components/dashboard/IntelFeed.tsx` | MODIFY | Clickable source links, Reddit items, external link icons |
-| `src/components/dashboard/PredictionMarkets.tsx` | MODIFY | Clickable market links to Polymarket, Iran-focused display |
-| `src/components/dashboard/Dashboard.tsx` | MODIFY | Load initial data from DB, show last-analyzed time |
-| `supabase/config.toml` | MODIFY | Register new edge functions |
-| Database migration | CREATE | 3 new tables: `intel_snapshots`, `market_snapshots`, `threat_assessments` |
-| pg_cron setup | CREATE | Hourly scheduled job calling `intel-agent` |
+| `supabase/functions/prediction-markets/index.ts` | REWRITE | Use `title_contains` keyword search, broaden to geopolitical markets |
+| `supabase/functions/reddit-intel/index.ts` | MODIFY | Better User-Agent, retry logic, error logging |
+| `supabase/functions/adsb-proxy/index.ts` | CREATE | Server-side proxy for ADS-B API |
+| `src/components/dashboard/ThreatMatrix.tsx` | MODIFY | Use adsb-proxy instead of direct browser fetch |
+| `supabase/functions/intel-agent/index.ts` | MODIFY | Add GDELT response logging and retry |
+| `supabase/config.toml` | MODIFY | Register adsb-proxy function |
 
----
-
-## Technical Architecture
-
-```text
-HOURLY CRON (pg_cron)
-  |
-  +--> intel-agent edge function
-        |
-        |-- GDELT x3 (Iran, US-mil, Cyber)
-        |-- ADS-B military aircraft
-        |-- Reddit x3 (r/geopolitics, r/worldnews, r/iran)
-        |-- Polymarket /public-search?q=iran
-        |
-        +--> AI Analysis (Gemini Flash)
-        |     |-- Combines all sources
-        |     |-- Generates SITREP + threat assessment
-        |
-        +--> Store in Database
-              |-- intel_snapshots (articles + reddit + flash report)
-              |-- market_snapshots (Polymarket odds)
-              |-- threat_assessments (probabilities + narrative)
-
-DASHBOARD (loads from DB first, then live)
-  |-- IntelFeed: clickable source links, Reddit items
-  |-- PredictionMarkets: Iran-focused, links to Polymarket
-  |-- ThreatEngine: reads historical assessments for trend charts
-  |-- AI Assistant: full context from DB history
-```
-
-## Free APIs Used
-
-| API | Auth | Data |
-|-----|------|------|
-| Polymarket `/public-search` | None | Iran prediction market odds |
-| Reddit `.json` endpoints | None | Social signals from r/geopolitics, r/worldnews, r/iran |
-| GDELT DOC 2.0 | None | Real-time conflict news |
-| adsb.lol | None | Military aircraft positions |
