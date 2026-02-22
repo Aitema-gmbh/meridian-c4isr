@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ExternalLink } from "lucide-react";
 
 interface Market {
   id: string;
@@ -11,6 +12,7 @@ interface Market {
   liquidity: number;
   endDate: string;
   active: boolean;
+  url?: string;
 }
 
 interface PredictionMarketsProps {
@@ -32,7 +34,7 @@ const PredictionMarkets = ({ markets, loading, onRefresh }: PredictionMarketsPro
         <div className="flex items-center gap-2">
           <div className={`h-2 w-2 rounded-full ${loading ? "bg-amber animate-pulse-glow" : "bg-tactical-green animate-pulse-glow"}`} />
           <span className="text-[11px] font-mono uppercase tracking-wider text-tactical-green">
-            Prediction Markets
+            Iran Markets
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -79,9 +81,21 @@ const PredictionMarkets = ({ markets, loading, onRefresh }: PredictionMarketsPro
               }`}
             >
               <div className="flex items-start justify-between gap-2 mb-2">
-                <p className="text-[10px] text-foreground/80 leading-snug flex-1 font-mono">
-                  {market.question}
-                </p>
+                {market.url ? (
+                  <a
+                    href={market.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-foreground/80 leading-snug flex-1 font-mono hover:text-primary transition-colors group flex items-start gap-1"
+                  >
+                    {market.question}
+                    <ExternalLink className="h-2.5 w-2.5 shrink-0 mt-0.5 opacity-50 group-hover:opacity-100" />
+                  </a>
+                ) : (
+                  <p className="text-[10px] text-foreground/80 leading-snug flex-1 font-mono">
+                    {market.question}
+                  </p>
+                )}
                 <span className="text-[8px] text-muted-foreground font-mono shrink-0 bg-secondary/50 px-1 py-0.5 rounded-sm">
                   {market.category}
                 </span>
@@ -140,7 +154,7 @@ const PredictionMarkets = ({ markets, loading, onRefresh }: PredictionMarketsPro
 
         {!loading && markets.length === 0 && (
           <div className="text-center py-8">
-            <p className="text-[10px] text-muted-foreground font-mono">NO ACTIVE MARKETS FOUND</p>
+            <p className="text-[10px] text-muted-foreground font-mono">NO ACTIVE IRAN MARKETS FOUND</p>
           </div>
         )}
       </div>

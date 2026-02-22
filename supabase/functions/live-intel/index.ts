@@ -23,7 +23,6 @@ serve(async (req) => {
       fetch("https://api.adsb.lol/v2/mil"),
     ]);
 
-    // Parse all GDELT results
     const parseGdelt = async (resp: PromiseSettledResult<Response>) => {
       if (resp.status !== "fulfilled" || !resp.value.ok) return [];
       try {
@@ -38,14 +37,12 @@ serve(async (req) => {
       parseGdelt(gdelt1), parseGdelt(gdelt2), parseGdelt(gdelt3)
     ]);
 
-    // Tag articles by query source
     const taggedArticles = [
       ...arts1.slice(0, 12).map((a: any) => ({ ...a, queryTag: "IRAN_GULF" })),
       ...arts2.slice(0, 10).map((a: any) => ({ ...a, queryTag: "US_MILITARY" })),
       ...arts3.slice(0, 8).map((a: any) => ({ ...a, queryTag: "CYBER" })),
     ];
 
-    // ADS-B
     let milTrackCount = 0;
     if (adsbResp.status === "fulfilled" && adsbResp.value.ok) {
       try {
@@ -67,8 +64,9 @@ serve(async (req) => {
       );
     }
 
+    // Include URL in article summaries for AI to preserve
     const articleSummaries = taggedArticles
-      .map((a: any, i: number) => `[${i + 1}] [${a.queryTag}] "${a.title}" (${a.domain}, ${a.seendate})`)
+      .map((a: any, i: number) => `[${i + 1}] [${a.queryTag}] "${a.title}" (${a.domain}, ${a.seendate}) URL: ${a.url || 'N/A'}`)
       .join("\n");
 
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -82,11 +80,11 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: `You are a senior intelligence analyst. Analyze news articles from multiple intelligence streams (Iran/Gulf, US Military, Cyber). For each article produce an intel brief with threat_tag classification and confidence level. Also generate a 3-sentence FLASH REPORT executive summary. Respond ONLY via the tool call.`,
+            content: `You are a senior intelligence analyst. Analyze news articles from multiple intelligence streams (Iran/Gulf, US Military, Cyber). For each article produce an intel brief with threat_tag classification and confidence level. Preserve the original article URL as sourceUrl. Also generate a 3-sentence FLASH REPORT executive summary. Respond ONLY via the tool call.`,
           },
           {
             role: "user",
-            content: `Analyze these ${taggedArticles.length} articles from 3 OSINT streams and produce intel briefs:\n\n${articleSummaries}\n\nFor each article: classify priority, assign a threat_tag (MARITIME, CYBER, DIPLOMATIC, MILITARY, ECONOMIC), set confidence (HIGH/MEDIUM/LOW), extract entities, score sentiment, and write a 1-2 sentence tactical summary.\n\nAlso write a 3-sentence FLASH REPORT summarizing the overall intelligence picture.`,
+            content: `Analyze these ${taggedArticles.length} articles from 3 OSINT streams and produce intel briefs:\n\n${articleSummaries}\n\nFor each article: classify priority, assign a threat_tag (MARITIME, CYBER, DIPLOMATIC, MILITARY, ECONOMIC), set confidence (HIGH/MEDIUM/LOW), extract entities, score sentiment, write a 1-2 sentence tactical summary, and preserve the sourceUrl from the article.`,
           },
         ],
         tools: [
@@ -98,18 +96,19 @@ serve(async (req) => {
               parameters: {
                 type: "object",
                 properties: {
-                  flashReport: { type: "string", description: "3-sentence executive flash report summarizing the overall situation" },
-                  dominantCategory: { type: "string", enum: ["MARITIME", "CYBER", "DIPLOMATIC", "MILITARY", "ECONOMIC"], description: "The dominant threat category across all items" },
+                  flashReport: { type: "string", description: "3-sentence executive flash report" },
+                  dominantCategory: { type: "string", enum: ["MARITIME", "CYBER", "DIPLOMATIC", "MILITARY", "ECONOMIC"] },
                   items: {
                     type: "array",
                     items: {
                       type: "object",
                       properties: {
                         priority: { type: "string", enum: ["HIGH", "MEDIUM", "LOW"] },
-                        content: { type: "string", description: "1-2 sentence tactical intel summary" },
+                        content: { type: "string" },
                         source: { type: "string" },
+                        sourceUrl: { type: "string", description: "Original article URL" },
                         entities: { type: "array", items: { type: "string" } },
-                        sentiment: { type: "number", description: "-1 to 1" },
+                        sentiment: { type: "number" },
                         threat_tag: { type: "string", enum: ["MARITIME", "CYBER", "DIPLOMATIC", "MILITARY", "ECONOMIC"] },
                         confidence: { type: "string", enum: ["HIGH", "MEDIUM", "LOW"] },
                       },

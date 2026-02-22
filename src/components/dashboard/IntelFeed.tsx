@@ -1,16 +1,19 @@
 import { motion } from "framer-motion";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ExternalLink } from "lucide-react";
 
 interface IntelItem {
   id: number;
   timestamp: string;
   source: string;
+  sourceUrl?: string;
   priority: "HIGH" | "MEDIUM" | "LOW";
   content: string;
   entities: string[];
   sentiment: number;
   threat_tag?: string;
   confidence?: string;
+  isReddit?: boolean;
 }
 
 interface IntelFeedProps {
@@ -117,6 +120,11 @@ const IntelFeed = ({ items = [], loading, onRefresh, flashReport }: IntelFeedPro
                 {item.priority === "HIGH" && (
                   <span className="text-[8px] font-mono text-crimson animate-pulse-fast">⚠ FLASH</span>
                 )}
+                {item.isReddit && (
+                  <span className="text-[8px] font-mono px-1 py-0.5 rounded-sm border text-purple-400 bg-purple-400/10 border-purple-400/20">
+                    REDDIT
+                  </span>
+                )}
                 {item.threat_tag && (
                   <span className={`text-[8px] font-mono px-1 py-0.5 rounded-sm border ${tagColors[item.threat_tag] || "text-muted-foreground border-border"}`}>
                     {item.threat_tag}
@@ -133,7 +141,19 @@ const IntelFeed = ({ items = [], loading, onRefresh, flashReport }: IntelFeedPro
               </span>
             </div>
             <div className="flex items-center gap-1.5 mb-1">
-              <span className="text-[9px] text-primary/70 font-mono">{item.source}</span>
+              {item.sourceUrl ? (
+                <a
+                  href={item.sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[9px] text-primary/70 font-mono hover:text-primary transition-colors flex items-center gap-1 group"
+                >
+                  {item.source}
+                  <ExternalLink className="h-2.5 w-2.5 opacity-50 group-hover:opacity-100 transition-opacity" />
+                </a>
+              ) : (
+                <span className="text-[9px] text-primary/70 font-mono">{item.source}</span>
+              )}
             </div>
             <p className="text-[11px] text-foreground/80 leading-relaxed mb-1.5">
               {item.content}
