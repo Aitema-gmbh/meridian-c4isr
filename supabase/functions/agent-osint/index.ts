@@ -8,10 +8,11 @@ const corsHeaders = {
 };
 
 const GDELT_STREAMS = [
-  { query: '(iran OR hormuz OR "persian gulf" OR IRGC OR houthi)', tag: "IRAN_GULF", max: 15 },
-  { query: '("US military" OR CENTCOM OR deployment OR "5th fleet")', tag: "US_MILITARY", max: 12 },
+  { query: '(iran OR hormuz OR "persian gulf" OR IRGC OR houthi OR pezeshkian OR larijani)', tag: "IRAN_GULF", max: 15 },
+  { query: '("US military" OR CENTCOM OR deployment OR "5th fleet" OR "Abraham Lincoln" OR "carrier strike" OR "B-2" OR "Al Udeid" OR "Diego Garcia")', tag: "US_MILITARY", max: 12 },
   { query: '(theme:WMD OR theme:MILITARY OR theme:TERROR) AND (iran OR gulf)', tag: "GKG_THEMES", max: 10 },
-  { query: '("nuclear" OR "uranium enrichment" OR IAEA) AND iran', tag: "NUCLEAR", max: 8 },
+  { query: '("nuclear" OR "uranium enrichment" OR IAEA OR Fordow OR Natanz OR Arak OR Parchin) AND iran', tag: "NUCLEAR", max: 8 },
+  { query: '(Pezeshkian OR Larijani OR "nuclear talks" OR "nuclear deal" OR "Midnight Hammer" OR "JCPOA") AND (iran OR US)', tag: "CRISIS_2026", max: 10 },
 ];
 
 async function fetchGdelt(stream: typeof GDELT_STREAMS[0]): Promise<any[]> {

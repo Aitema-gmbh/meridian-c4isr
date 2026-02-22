@@ -15,14 +15,21 @@ const STRATEGIC_SITES = [
   { name: "Bushehr Nuclear Plant", lat: 28.83, lon: 50.89, country: "IR" },
   { name: "Isfahan Nuclear Facility", lat: 32.65, lon: 51.68, country: "IR" },
   { name: "Natanz Enrichment", lat: 33.72, lon: 51.73, country: "IR" },
+  { name: "Fordow Enrichment Plant", lat: 32.77, lon: 51.56, country: "IR" },
+  { name: "Parchin Military Complex", lat: 35.52, lon: 51.77, country: "IR" },
+  { name: "Arak Heavy Water Reactor", lat: 34.38, lon: 49.24, country: "IR" },
+  { name: "Kharg Island Oil Terminal", lat: 29.24, lon: 50.31, country: "IR" },
+  { name: "Chabahar Port", lat: 25.30, lon: 60.64, country: "IR" },
   { name: "Al Udeid Air Base", lat: 25.12, lon: 51.32, country: "QA" },
   { name: "Al Dhafra Air Base", lat: 24.25, lon: 54.55, country: "AE" },
   { name: "Bahrain Naval Support", lat: 26.21, lon: 50.59, country: "BH" },
   { name: "Camp Arifjan", lat: 29.17, lon: 48.08, country: "KW" },
   { name: "Nevatim Air Base", lat: 31.21, lon: 34.84, country: "IL" },
   { name: "Hmeimim Air Base", lat: 35.41, lon: 35.95, country: "SY" },
+  { name: "Imam Ali Base Syria", lat: 34.44, lon: 40.55, country: "SY" },
   { name: "Aden Port", lat: 12.79, lon: 45.01, country: "YE" },
   { name: "Hodeidah Port", lat: 14.80, lon: 42.95, country: "YE" },
+  { name: "Diego Garcia B-2 Base", lat: -7.32, lon: 72.41, country: "US" },
 ];
 
 interface FirePoint {

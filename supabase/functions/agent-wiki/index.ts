@@ -23,6 +23,15 @@ const WATCH_ARTICLES = [
   "Islamic_Republic_of_Iran_Navy",
   "Gulf_of_Oman",
   "Bab-el-Mandeb",
+  // 2026 Iran/US crisis additions
+  "Masoud_Pezeshkian",
+  "Ali_Larijani",
+  "Joint_Comprehensive_Plan_of_Action",
+  "Fordow_Fuel_Enrichment_Plant",
+  "Iran_ballistic_missile_program",
+  "Kharg_Island",
+  "Natanz",
+  "2025_strikes_on_Iran",
 ];
 
 interface PageviewResult {

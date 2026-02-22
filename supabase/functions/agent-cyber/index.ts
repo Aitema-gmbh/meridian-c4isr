@@ -9,7 +9,7 @@ const corsHeaders = {
 
 const GDELT_CYBER_QUERIES = [
   { query: '("cyber attack" OR APT OR ransomware OR "critical infrastructure" OR "power grid") AND (iran OR gulf OR "middle east")', tag: "CYBER_GENERAL", max: 12 },
-  { query: '("APT33" OR "APT34" OR "APT35" OR "Charming Kitten" OR "MuddyWater" OR "OilRig" OR "Peach Sandstorm")', tag: "IRAN_APT", max: 10 },
+  { query: '("APT33" OR "APT34" OR "APT35" OR "Charming Kitten" OR "MuddyWater" OR "OilRig" OR "Peach Sandstorm" OR "Shahid Hemmat" OR "CyberAv3ngers" OR "Mint Sandstorm" OR "Cotton Sandstorm")', tag: "IRAN_APT", max: 10 },
 ];
 
 async function fetchGdelt(query: string, max: number): Promise<any[]> {

@@ -8,11 +8,13 @@ const corsHeaders = {
 };
 
 const RSS_FEEDS = [
-  { url: "https://www.reddit.com/r/geopolitics/search.rss?q=iran&sort=new&limit=10&restrict_sr=on&t=week", sub: "r/geopolitics" },
-  { url: "https://www.reddit.com/r/worldnews/search.rss?q=iran+OR+hormuz+OR+persian+gulf&sort=new&limit=10&restrict_sr=on&t=week", sub: "r/worldnews" },
-  { url: "https://www.reddit.com/r/CredibleDefense/search.rss?q=iran+OR+gulf+OR+CENTCOM&sort=new&limit=8&restrict_sr=on&t=week", sub: "r/CredibleDefense" },
-  { url: "https://www.reddit.com/r/OSINT/search.rss?q=iran+OR+military&sort=new&limit=8&restrict_sr=on&t=week", sub: "r/OSINT" },
+  { url: "https://www.reddit.com/r/geopolitics/search.rss?q=iran+OR+pezeshkian+OR+larijani&sort=new&limit=10&restrict_sr=on&t=week", sub: "r/geopolitics" },
+  { url: "https://www.reddit.com/r/worldnews/search.rss?q=iran+OR+hormuz+OR+persian+gulf+OR+pezeshkian&sort=new&limit=10&restrict_sr=on&t=week", sub: "r/worldnews" },
+  { url: "https://www.reddit.com/r/CredibleDefense/search.rss?q=iran+OR+gulf+OR+CENTCOM+OR+carrier+OR+B-2&sort=new&limit=8&restrict_sr=on&t=week", sub: "r/CredibleDefense" },
+  { url: "https://www.reddit.com/r/OSINT/search.rss?q=iran+OR+military+OR+hormuz&sort=new&limit=8&restrict_sr=on&t=week", sub: "r/OSINT" },
   { url: "https://www.reddit.com/r/iran/.rss?limit=10", sub: "r/iran" },
+  { url: "https://www.reddit.com/r/NonCredibleDefense/search.rss?q=iran+OR+carrier+OR+B-2+OR+hormuz&sort=new&limit=8&restrict_sr=on&t=week", sub: "r/NCD" },
+  { url: "https://www.reddit.com/r/LessCredibleDefence/search.rss?q=iran+OR+gulf+OR+strike&sort=new&limit=8&restrict_sr=on&t=week", sub: "r/LessCredibleDefence" },
 ];
 
 const HEADERS = { "User-Agent": "web:MeridianIntel:v1.0 (by /u/meridian_osint)", Accept: "application/json" };

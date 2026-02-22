@@ -13,7 +13,7 @@ const RSS_FEEDS = [
   { url: "https://www.defense.gov/DesktopModules/ArticleCS/RSS.aspx?ContentType=9&Site=945", tag: "ADVISORIES" },
 ];
 
-const IRAN_KEYWORDS = ["iran", "iranian", "irgc", "hormuz", "persian gulf", "centcom", "houthi", "middle east", "gulf", "5th fleet", "navy", "strait", "tehran", "nuclear"];
+const IRAN_KEYWORDS = ["iran", "iranian", "irgc", "hormuz", "persian gulf", "centcom", "houthi", "middle east", "gulf", "5th fleet", "navy", "strait", "tehran", "nuclear", "pezeshkian", "larijani", "midnight hammer", "strike", "armada", "carrier", "b-2", "bomber", "abraham lincoln", "fordow", "natanz", "ballistic missile", "diego garcia", "al udeid"];
 
 function parseRssItems(xml: string): { title: string; link: string; pubDate: string; description: string }[] {
   const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];

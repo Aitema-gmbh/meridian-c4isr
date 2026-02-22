@@ -113,7 +113,7 @@ serve(async (req) => {
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
         messages: [
-          { role: "system", content: `You are the HEAD ANALYST of a multi-source intelligence fusion center. You receive reports from 7 specialized agents (flights, naval, OSINT, Reddit, Pentagon, cyber, markets). Your job is to synthesize all inputs into a unified threat assessment. Calculate probabilities based on ALL available evidence. Compare your analysis against prediction market prices and flag divergences. If agents contradict each other, note it. Be precise and data-driven.` },
+          { role: "system", content: `You are the HEAD ANALYST of a multi-source intelligence fusion center monitoring the IRAN/US CRISIS (February 2026). CONTEXT: The US has deployed 2 carrier strike groups (USS Nimitz CSG + USS Abraham Lincoln CSG) plus 14+ warships to the Gulf region. President Trump has given Iran a "10-15 day" ultimatum on nuclear/missile deal. Iranian President Pezeshkian has rejected terms. Ali Larijani is reportedly coordinating war preparations. Operation Midnight Hammer (US strikes on Iran, June 2025) is recent precedent. B-2 Spirit bombers are staged at Diego Garcia. Key targets: Fordow, Natanz, Parchin, Isfahan, Arak, Bushehr. Houthi/Hezbollah/PMF proxy axis remains active. You receive reports from 10 specialized agents (flights, naval, OSINT, Reddit, Pentagon, cyber, markets, wiki, macro, fires). Synthesize all inputs into a unified threat assessment. Calculate probabilities based on ALL available evidence. Compare against prediction markets. Be precise and data-driven.` },
           { role: "user", content: `MULTI-AGENT INTELLIGENCE SYNTHESIS\n\n${contextParts.join("\n\n")}${trendContext}\n\nSynthesize all agent reports into a unified threat assessment. Calculate precise probabilities. Identify divergences between your assessment and market prices. Note any inter-agent conflicts.` },
         ],
         tools: [{
@@ -206,7 +206,7 @@ serve(async (req) => {
 
     // ========== CII: Country Instability Index ==========
     const FOCUS_COUNTRIES = [
-      { code: "IR", name: "Iran", keywords: ["iran", "iranian", "tehran", "irgc", "khamenei", "hormuz", "persian gulf"] },
+      { code: "IR", name: "Iran", keywords: ["iran", "iranian", "tehran", "irgc", "khamenei", "hormuz", "persian gulf", "pezeshkian", "larijani", "fordow", "natanz", "parchin"] },
       { code: "IL", name: "Israel", keywords: ["israel", "israeli", "idf", "mossad", "tel aviv", "netanyahu"] },
       { code: "SA", name: "Saudi Arabia", keywords: ["saudi", "riyadh", "mbs", "aramco"] },
       { code: "AE", name: "UAE", keywords: ["uae", "emirates", "abu dhabi", "dubai"] },
@@ -216,6 +216,9 @@ serve(async (req) => {
       { code: "BH", name: "Bahrain", keywords: ["bahrain", "manama", "5th fleet"] },
       { code: "OM", name: "Oman", keywords: ["oman", "muscat"] },
       { code: "KW", name: "Kuwait", keywords: ["kuwait", "arifjan"] },
+      { code: "SY", name: "Syria", keywords: ["syria", "syrian", "damascus", "hmeimim", "imam ali base"] },
+      { code: "LB", name: "Lebanon", keywords: ["lebanon", "lebanese", "hezbollah", "beirut", "nasrallah"] },
+      { code: "US", name: "United States", keywords: ["us military", "pentagon", "centcom", "trump", "carrier strike", "abraham lincoln", "nimitz", "b-2", "diego garcia"] },
     ];
 
     // Get previous CII scores for trend

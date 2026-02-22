@@ -22,6 +22,9 @@ const COUNTRIES = [
   { code: "BH", name: "Bahrain", flag: "🇧🇭" },
   { code: "OM", name: "Oman", flag: "🇴🇲" },
   { code: "KW", name: "Kuwait", flag: "🇰🇼" },
+  { code: "SY", name: "Syria", flag: "🇸🇾" },
+  { code: "LB", name: "Lebanon", flag: "🇱🇧" },
+  { code: "US", name: "United States", flag: "🇺🇸" },
 ];
 
 const scoreColor = (score: number) => {
