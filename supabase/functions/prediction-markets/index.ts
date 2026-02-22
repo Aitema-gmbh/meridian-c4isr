@@ -6,19 +6,16 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// Keywords that indicate Iran/geopolitical relevance
-const IRAN_KEYWORDS = [
-  "iran", "iranian", "hormuz", "persian gulf", "irgc", "tehran",
-  "nuclear", "jcpoa", "hezbollah", "houthi", "strait",
-  "middle east", "israel", "us iran", "sanction",
-  "oil", "crude", "opec", "war", "conflict", "military",
-  "strike", "attack", "bomb", "missile", "drone",
-  "gaza", "lebanon", "syria", "yemen", "gulf",
+const SEARCH_KEYWORDS = [
+  "iran", "war", "conflict", "middle east", "nuclear", "sanctions",
+  "oil", "hormuz", "military", "israel", "strike", "attack",
+  "china", "russia", "nato", "missile", "drone", "gaza", "hezbollah",
+  "yemen", "houthi", "syria", "lebanon", "geopolitical",
 ];
 
-function isRelevant(text: string): boolean {
+function isGeopolitical(text: string): boolean {
   const lower = text.toLowerCase();
-  return IRAN_KEYWORDS.some((kw) => lower.includes(kw));
+  return SEARCH_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
 serve(async (req) => {
@@ -27,18 +24,17 @@ serve(async (req) => {
   }
 
   try {
-    // Fetch a large batch of active events across geopolitical tags
-    const tags = ["iran", "middle-east", "geopolitics", "oil", "war", "military", "nuclear", "israel"];
-    
+    // Search multiple keywords in parallel
+    const searchTerms = ["iran", "war", "middle east", "nuclear", "oil crisis", "military conflict", "israel"];
+
     const results = await Promise.all(
-      tags.map((tag) =>
-        fetch(`https://gamma-api.polymarket.com/events?active=true&closed=false&limit=15&tag=${encodeURIComponent(tag)}`)
+      searchTerms.map((term) =>
+        fetch(`https://gamma-api.polymarket.com/events?active=true&closed=false&limit=10&title_contains=${encodeURIComponent(term)}`)
           .then((r) => r.ok ? r.json() : [])
           .catch(() => [])
       )
     );
 
-    // Deduplicate and filter for Iran relevance
     const seen = new Set<string>();
     const markets: any[] = [];
 
@@ -56,8 +52,7 @@ serve(async (req) => {
         const eventMarkets = event.markets || [];
         for (const market of eventMarkets) {
           const question = market.question || title;
-          // Filter: must be Iran/geopolitically relevant
-          if (!isRelevant(question) && !isRelevant(title)) continue;
+          if (!isGeopolitical(question) && !isGeopolitical(title)) continue;
 
           const outcomePrices = market.outcomePrices
             ? (typeof market.outcomePrices === "string" ? JSON.parse(market.outcomePrices) : market.outcomePrices)
@@ -80,8 +75,7 @@ serve(async (req) => {
           });
         }
 
-        // If event title is relevant but has no sub-markets
-        if (eventMarkets.length === 0 && isRelevant(title)) {
+        if (eventMarkets.length === 0 && isGeopolitical(title)) {
           markets.push({
             id,
             question: title,
@@ -98,9 +92,8 @@ serve(async (req) => {
       }
     }
 
-    // Sort by volume descending
     markets.sort((a, b) => (b.volume || 0) - (a.volume || 0));
-    const topMarkets = markets.slice(0, 20);
+    const topMarkets = markets.slice(0, 25);
 
     return new Response(
       JSON.stringify({ markets: topMarkets, timestamp: new Date().toISOString() }),

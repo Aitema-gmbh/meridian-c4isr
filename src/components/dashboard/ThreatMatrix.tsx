@@ -105,7 +105,11 @@ const ThreatMatrix = () => {
 
   const fetchAircraft = useCallback(async () => {
     try {
-      const resp = await fetch("https://api.adsb.lol/v2/mil");
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID || "akpvedbvrzbeniyhstfu";
+      const resp = await fetch(`https://${projectId}.supabase.co/functions/v1/adsb-proxy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
       if (!resp.ok) return;
       const data = await resp.json();
       const ac: AircraftData[] = (data.ac || []).filter(
