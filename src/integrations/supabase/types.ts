@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_baselines: {
+        Row: {
+          agent_name: string
+          count: number
+          day_of_week: number
+          hour_of_day: number
+          id: string
+          mean: number
+          metric_name: string
+          updated_at: string
+          variance: number
+        }
+        Insert: {
+          agent_name: string
+          count?: number
+          day_of_week: number
+          hour_of_day: number
+          id?: string
+          mean?: number
+          metric_name: string
+          updated_at?: string
+          variance?: number
+        }
+        Update: {
+          agent_name?: string
+          count?: number
+          day_of_week?: number
+          hour_of_day?: number
+          id?: string
+          mean?: number
+          metric_name?: string
+          updated_at?: string
+          variance?: number
+        }
+        Relationships: []
+      }
       agent_reports: {
         Row: {
           agent_name: string
@@ -47,6 +83,39 @@ export type Database = {
           report_type?: string
           summary?: string | null
           threat_level?: number | null
+        }
+        Relationships: []
+      }
+      country_scores: {
+        Row: {
+          cii_score: number
+          country_code: string
+          country_name: string
+          created_at: string
+          id: string
+          signal_breakdown: Json
+          trend_24h: number | null
+          trend_7d: number | null
+        }
+        Insert: {
+          cii_score?: number
+          country_code: string
+          country_name: string
+          created_at?: string
+          id?: string
+          signal_breakdown?: Json
+          trend_24h?: number | null
+          trend_7d?: number | null
+        }
+        Update: {
+          cii_score?: number
+          country_code?: string
+          country_name?: string
+          created_at?: string
+          id?: string
+          signal_breakdown?: Json
+          trend_24h?: number | null
+          trend_7d?: number | null
         }
         Relationships: []
       }

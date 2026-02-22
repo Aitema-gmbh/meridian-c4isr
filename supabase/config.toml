@@ -5,3 +5,15 @@ verify_jwt = false
 
 [functions.threat-engine]
 verify_jwt = false
+
+[functions.agent-wiki]
+verify_jwt = false
+
+[functions.agent-macro]
+verify_jwt = false
+
+[functions.agent-fires]
+verify_jwt = false
+
+[functions.agent-head-analyst]
+verify_jwt = false

@@ -7,7 +7,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const AGENT_NAMES = ["flights", "naval", "osint", "reddit", "pentagon", "cyber", "markets"];
+const AGENT_NAMES = ["flights", "naval", "osint", "reddit", "pentagon", "cyber", "markets", "wiki", "macro", "fires"];
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -86,6 +86,21 @@ serve(async (req) => {
       const md = agentReports.markets.data;
       const topMarkets = (md.markets || []).slice(0, 8).map((m: any) => `"${(m.question || "").slice(0, 50)}": ${m.yesPrice ?? "?"}%`).join("; ");
       contextParts.push(`MARKETS AGENT: ${agentReports.markets.summary}\nTop markets: ${topMarkets}. Significant moves: ${(md.significantMoves || []).length}.`);
+    }
+    if (agentReports.wiki) {
+      const wd = agentReports.wiki.data;
+      const topSpikes = (wd.topSpikes || []).slice(0, 3).map((s: any) => `${s.article}: ${s.ratio}x (Z=${s.zScore})`).join("; ");
+      contextParts.push(`WIKI CRISIS AGENT: ${agentReports.wiki.summary}\nWiki Crisis Index: ${wd.wikiCrisisIndex}/100. Top spikes: ${topSpikes || "none"}.`);
+    }
+    if (agentReports.macro) {
+      const mcd = agentReports.macro.data;
+      const moves = (mcd.significantMoves || []).join("; ");
+      contextParts.push(`MACRO AGENT: ${agentReports.macro.summary}\nMacro Risk Index: ${mcd.macroRiskIndex}/100. Safe-haven score: ${mcd.safeHavenScore}. Oil score: ${mcd.oilScore}. Moves: ${moves || "none"}.`);
+    }
+    if (agentReports.fires) {
+      const fd2 = agentReports.fires.data;
+      const nearSites = (fd2.nearSiteFires || []).map((f: any) => `${f.site} (${f.distKm}km)`).join("; ");
+      contextParts.push(`FIRES/SEISMIC AGENT: ${agentReports.fires.summary}\nGeo-Thermal Index: ${fd2.geoThermalIndex}/100. Near-site fires: ${nearSites || "none"}. Significant quakes: ${fd2.significantQuakes}.`);
     }
 
     const trendContext = lastAssessment
