@@ -8,6 +8,9 @@ import ThreatEngine from "./ThreatEngine";
 import NetworkGraph from "./NetworkGraph";
 import AIAssistant from "./AIAssistant";
 import PredictionMarkets from "./PredictionMarkets";
+import AgentStatusPanel from "./AgentStatusPanel";
+import SignalTimeline from "./SignalTimeline";
+import CountryBrief from "./CountryBrief";
 
 const DEDICATION = "Dedicated to Manos, Ghassan and Fedo";
 const LIVE_INTEL_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/live-intel`;
@@ -111,7 +114,7 @@ const DataTicker = ({ liveData, marketsData, lastAnalyzed }: { liveData: LiveInt
   );
 };
 
-type TabView = "map" | "network";
+type TabView = "map" | "network" | "agents" | "timeline" | "countries";
 type RightTab = "threat" | "markets";
 
 const Dashboard = () => {
@@ -252,26 +255,25 @@ const Dashboard = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setActiveTab("map")}
-            className={`text-[10px] font-mono px-3 py-1 rounded-sm border transition-colors ${
-              activeTab === "map"
-                ? "border-primary/50 text-primary bg-primary/10"
-                : "border-panel-border text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            THREAT MATRIX
-          </button>
-          <button
-            onClick={() => setActiveTab("network")}
-            className={`text-[10px] font-mono px-3 py-1 rounded-sm border transition-colors ${
-              activeTab === "network"
-                ? "border-primary/50 text-primary bg-primary/10"
-                : "border-panel-border text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            NETWORK GRAPH
-          </button>
+          {([
+            { key: "map", label: "THREAT MATRIX" },
+            { key: "network", label: "NETWORK GRAPH" },
+            { key: "agents", label: "AGENTS" },
+            { key: "timeline", label: "TIMELINE" },
+            { key: "countries", label: "CII" },
+          ] as { key: TabView; label: string }[]).map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`text-[10px] font-mono px-3 py-1 rounded-sm border transition-colors ${
+                activeTab === tab.key
+                  ? "border-primary/50 text-primary bg-primary/10"
+                  : "border-panel-border text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -291,7 +293,11 @@ const Dashboard = () => {
               transition={{ duration: 0.2 }}
               className="h-full"
             >
-              {activeTab === "map" ? <ThreatMatrix /> : <NetworkGraph />}
+              {activeTab === "map" && <ThreatMatrix />}
+              {activeTab === "network" && <NetworkGraph />}
+              {activeTab === "agents" && <AgentStatusPanel />}
+              {activeTab === "timeline" && <SignalTimeline />}
+              {activeTab === "countries" && <CountryBrief />}
             </motion.div>
           </AnimatePresence>
         </div>
