@@ -142,6 +142,7 @@ export { getAircraftColor, getAircraftCategory, getVesselColor };
 const ThreatMatrix = () => {
   const [trackCount, setTrackCount] = useState(0);
   const [vesselCount, setVesselCount] = useState(0);
+  const [vesselSource, setVesselSource] = useState<"live" | "simulated">("simulated");
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [selectedAircraft, setSelectedAircraft] = useState<AircraftData | null>(null);
   const [altHistory, setAltHistory] = useState<{ time: string; alt: number }[]>([]);
@@ -261,6 +262,7 @@ const ThreatMatrix = () => {
       if (!resp.ok) return;
       const data = await resp.json();
       const vessels: VesselData[] = data.vessels || [];
+      const source: "live" | "simulated" = data.source || "simulated";
 
       if (vesselsLayerRef.current) {
         vesselsLayerRef.current.clearLayers();
@@ -273,6 +275,7 @@ const ThreatMatrix = () => {
       }
 
       setVesselCount(vessels.length);
+      setVesselSource(source);
     } catch (e) {
       console.error("AIS fetch error:", e);
     }
@@ -297,6 +300,11 @@ const ThreatMatrix = () => {
         </div>
         <div className="flex items-center gap-3">
           <span className="text-[10px] text-primary/70 font-mono">{trackCount} AIR | {vesselCount} SEA</span>
+          {vesselSource === "live" ? (
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">● LIVE AIS</span>
+          ) : (
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">◌ SIM</span>
+          )}
           <span className="text-[10px] text-muted-foreground">
             {lastUpdate ? `${lastUpdate.toLocaleTimeString("en-US", { hour12: false })}Z` : "ACQUIRING..."}
           </span>
