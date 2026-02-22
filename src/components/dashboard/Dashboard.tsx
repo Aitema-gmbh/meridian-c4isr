@@ -157,7 +157,7 @@ const Dashboard = () => {
   const fetchLiveIntel = useCallback(async () => {
     setIntelLoading(true);
     try {
-      // Fetch GDELT intel + Reddit in parallel
+      // Try fetching fresh data, but don't fail if credits exhausted
       const [intelResp, redditResp] = await Promise.allSettled([
         fetch(LIVE_INTEL_URL, {
           method: "POST",
@@ -176,18 +176,18 @@ const Dashboard = () => {
       if (intelResp.status === "fulfilled") {
         const resp = intelResp.value;
         if (resp.status === 429) { toast.error("Rate limit exceeded. Using cached data."); }
-        else if (resp.status === 402) { toast.error("AI credits exhausted. Top up at Settings → Workspace → Usage. Using cached data."); }
+        else if (resp.status === 402) { toast.error("AI credits exhausted. Showing cached intel from database."); }
         else if (resp.ok) data = await resp.json();
       }
 
-      // Merge Reddit items
+      // Merge Reddit items (Reddit doesn't need AI credits)
       if (redditResp.status === "fulfilled" && redditResp.value.ok) {
         try {
           const redditData = await redditResp.value.json();
           const redditItems = (redditData.items || []) as IntelItem[];
           if (data) {
             data.items = [...data.items, ...redditItems];
-          } else {
+          } else if (redditItems.length > 0) {
             data = {
               items: redditItems,
               flashReport: null,
@@ -197,10 +197,11 @@ const Dashboard = () => {
         } catch {}
       }
 
+      // Only update if we got fresh data; otherwise keep DB-loaded data
       if (data) setLiveData(data);
     } catch (e) {
       console.error("Live intel error:", e);
-      toast.error("Failed to fetch live intelligence.");
+      // Don't show error toast - we already have DB data
     } finally {
       setIntelLoading(false);
     }
@@ -225,10 +226,11 @@ const Dashboard = () => {
   }, []);
 
   useEffect(() => {
-    // Fetch fresh data immediately, load DB in parallel as fallback
-    fetchLiveIntel();
-    fetchMarkets();
-    loadFromDB(); // fills in if live fetches are slow
+    // Load DB data first (instant, no credits needed), then try live API as enhancement
+    loadFromDB().then(() => {
+      fetchLiveIntel();
+      fetchMarkets();
+    });
     const intelInterval = setInterval(fetchLiveIntel, 300000);
     const marketsInterval = setInterval(fetchMarkets, 120000);
     return () => { clearInterval(intelInterval); clearInterval(marketsInterval); };

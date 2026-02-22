@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 import { MOCK_TENSION_HISTORY } from "@/data/mockData";
+import { supabase } from "@/integrations/supabase/client";
 
 const THREAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/threat-engine`;
 
@@ -129,6 +130,38 @@ const ThreatEngine = ({ liveMetadata, marketData = [] }: { liveMetadata: LiveMet
   const [data, setData] = useState<ThreatData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dbLoaded = useRef(false);
+
+  // Load latest threat assessment from DB (no AI credits needed)
+  const loadFromDB = useCallback(async () => {
+    try {
+      const { data: rows } = await supabase
+        .from("threat_assessments")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (rows?.[0]) {
+        const r = rows[0] as any;
+        setData({
+          tensionIndex: r.tension_index ?? 50,
+          hormuzClosure: r.hormuz_closure ?? 20,
+          cyberAttack: r.cyber_attack ?? 15,
+          proxyEscalation: r.proxy_escalation ?? 30,
+          directConfrontation: r.direct_confrontation ?? 20,
+          sentimentScore: r.raw_indicators?.sentimentScore ?? -0.5,
+          flightAnomalyIndex: r.raw_indicators?.flightAnomalyIndex ?? 40,
+          maritimeAnomalyIndex: r.raw_indicators?.maritimeAnomalyIndex ?? 30,
+          analysisNarrative: r.analysis_narrative ?? "",
+          watchcon: r.watchcon ?? "3",
+          marketDivergences: r.market_divergences as string[] ?? [],
+        });
+        dbLoaded.current = true;
+      }
+    } catch (e) {
+      console.error("DB threat load error:", e);
+    }
+  }, []);
 
   const fetchThreatData = async (meta: LiveMetadata | null) => {
     setLoading(true);
@@ -154,7 +187,6 @@ const ThreatEngine = ({ liveMetadata, marketData = [] }: { liveMetadata: LiveMet
             cyberIndicators: "2 APT campaigns detected targeting Gulf infrastructure",
           };
 
-      // Add market data as additional indicators
       const marketContext = marketData.length > 0
         ? marketData.slice(0, 5).map(m => `"${m.question}": ${m.yesPrice ?? '?'}% YES`).join("; ")
         : null;
@@ -168,24 +200,27 @@ const ThreatEngine = ({ liveMetadata, marketData = [] }: { liveMetadata: LiveMet
         body: JSON.stringify({ indicators, marketContext }),
       });
 
-      if (resp.status === 429) { toast.error("Rate limit exceeded."); setError("Rate limit exceeded. Try again later."); return; }
-      if (resp.status === 402) { toast.error("AI credits exhausted. Top up at Settings → Workspace → Usage."); setError("AI credits exhausted. Add credits in Settings → Workspace → Usage."); return; }
+      if (resp.status === 429) { toast.error("Rate limit exceeded."); if (!dbLoaded.current) setError("Rate limit exceeded."); return; }
+      if (resp.status === 402) { toast.error("AI credits exhausted. Showing cached assessment."); if (!dbLoaded.current) setError("AI credits exhausted."); return; }
       if (!resp.ok) throw new Error("Threat engine error");
 
       const result = await resp.json();
       setData(result);
     } catch (e) {
       console.error("Threat engine error:", e);
-      setError("Failed to calculate threat assessment");
-      toast.error("Threat engine unavailable.");
+      if (!dbLoaded.current) {
+        setError("Failed to calculate threat assessment");
+        toast.error("Threat engine unavailable.");
+      }
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchThreatData(liveMetadata);
-  }, [liveMetadata]);
+    // Load DB first (instant), then try live API
+    loadFromDB().then(() => fetchThreatData(liveMetadata));
+  }, [liveMetadata, loadFromDB]);
 
   const d = data;
 
