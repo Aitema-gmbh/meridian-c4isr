@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, CircleMarker, Tooltip as LeafletTooltip, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { MOCK_ASSETS } from "@/data/mockData";
 
@@ -103,7 +103,7 @@ const ThreatMatrix = () => {
                 weight: 1,
               }}
             >
-              <Tooltip
+              <LeafletTooltip
                 direction="top"
                 className="leaflet-tooltip-tactical"
               >
@@ -116,7 +116,7 @@ const ThreatMatrix = () => {
                   {ac.alt_baro && <div style={{ color: "#999" }}>ALT: {ac.alt_baro === "ground" ? "GND" : `${ac.alt_baro} ft`}</div>}
                   {ac.gs && <div style={{ color: "#999" }}>SPD: {Math.round(ac.gs)} kts</div>}
                 </div>
-              </Tooltip>
+              </LeafletTooltip>
             </CircleMarker>
           ))}
 
@@ -133,13 +133,13 @@ const ThreatMatrix = () => {
                 weight: 2,
               }}
             >
-              <Tooltip direction="top" className="leaflet-tooltip-tactical">
+              <LeafletTooltip direction="top" className="leaflet-tooltip-tactical">
                 <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "10px", lineHeight: 1.4 }}>
                   <div style={{ color: "hsl(185 80% 50%)", fontWeight: 600 }}>{asset.name}</div>
                   <div style={{ color: "#999" }}>{asset.type}</div>
                   <div style={{ color: "hsl(145 70% 45%)" }}>{asset.status}</div>
                 </div>
-              </Tooltip>
+              </LeafletTooltip>
             </CircleMarker>
           ))}
 
@@ -156,13 +156,13 @@ const ThreatMatrix = () => {
                 weight: 2,
               }}
             >
-              <Tooltip direction="top" className="leaflet-tooltip-tactical">
+              <LeafletTooltip direction="top" className="leaflet-tooltip-tactical">
                 <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "10px", lineHeight: 1.4 }}>
                   <div style={{ color: "hsl(0 85% 55%)", fontWeight: 600 }}>{asset.name}</div>
                   <div style={{ color: "#999" }}>{asset.type}</div>
                   <div style={{ color: "hsl(0 85% 55% / 0.7)" }}>{asset.status}</div>
                 </div>
-              </Tooltip>
+              </LeafletTooltip>
             </CircleMarker>
           ))}
         </MapContainer>
