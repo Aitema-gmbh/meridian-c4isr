@@ -1,155 +1,165 @@
 
-
-# 10x Intelligence Upgrade: Prediction Markets, Multi-Source OSINT, Visual Overhaul
+# Enhanced Intelligence Platform: Iran-Focused Markets, Source Links, Social Media, Database + Hourly Agent
 
 ## Overview
-Massively expand the dashboard with real Polymarket prediction market data, richer multi-query OSINT intelligence, AI-generated situation reports, and a visually stunning UI overhaul with animated threat gauges, glassmorphism panels, and more data density.
+This upgrade addresses 5 key requests: (1) clickable source links on intel items, (2) Polymarket data filtered to Iran/geopolitical relevance, (3) Reddit social media integration, (4) database persistence for all intel, and (5) an automated intelligence agent that re-analyzes every hour via a scheduled job.
+
+Note on X/Twitter: The Twitter API requires paid API keys ($100+/month). Reddit's public API is free and provides similar social signal intelligence. If you want X integration later, we can add it once you have Twitter API credentials.
 
 ---
 
-## Part 1: Polymarket Prediction Markets Panel (NEW)
+## Part 1: Fix Polymarket -- Iran-Focused Search
 
-**What:** A new "PREDICTION MARKETS" panel showing real-time prediction market odds for geopolitical events from Polymarket's free public API.
+**Problem:** Current tag-based queries return irrelevant results (MicroStrategy, deportation stats).
 
-**How:**
-- Create new edge function `prediction-markets` that:
-  1. Fetches from `https://gamma-api.polymarket.com/events?active=true&closed=false&limit=20` with tag search for Iran, war, conflict, Middle East, military, oil
-  2. Also queries specific slugs if known (e.g., iran-war, us-iran, oil-price)
-  3. Returns structured market data: question, outcome prices (YES/NO %), volume, liquidity
-  4. No API key needed -- Polymarket Gamma API is fully public
+**Fix:** Switch from `GET /events?tag=...` to Polymarket's `/public-search?q=...` endpoint which searches by keyword across event titles.
 
-- Create new component `PredictionMarkets.tsx`:
-  - Displays each market as a card with the question, YES/NO probability bars, volume
-  - Color-coded: red for high-probability negative outcomes, green for positive
-  - Auto-refresh every 2 minutes
-  - Animated probability bars with framer-motion
-  - Shows "POLYMARKET LIVE" indicator
-
-**Files:**
-- `supabase/functions/prediction-markets/index.ts` -- NEW
-- `src/components/dashboard/PredictionMarkets.tsx` -- NEW
-- `supabase/config.toml` -- register function
+**Changes to `supabase/functions/prediction-markets/index.ts`:**
+- Replace tag-based queries with keyword search queries: "iran", "iran war", "middle east conflict", "strait of hormuz", "oil price", "nuclear deal", "sanctions iran"
+- Use `GET https://gamma-api.polymarket.com/public-search?q=iran&events_status=active` 
+- Filter results to only geopolitically relevant markets
+- Add `url` field to each market pointing to `https://polymarket.com/event/{slug}`
 
 ---
 
-## Part 2: Enhanced Live Intel Edge Function (10x more data)
-
-**What:** Massively expand the `live-intel` edge function to pull from multiple GDELT queries and produce richer analysis.
+## Part 2: Source Links on Intel Items
 
 **Changes to `supabase/functions/live-intel/index.ts`:**
-- Run 3 parallel GDELT queries instead of 1:
-  1. Iran + Hormuz + Persian Gulf (current)
-  2. US military + CENTCOM + deployment
-  3. Cyber attack + critical infrastructure + APT
-- Increase max articles from 12 to 30
-- Add a "FLASH REPORT" field: AI generates a 3-sentence executive summary of the overall situation
-- Add "threat_tags" to each item: MARITIME, CYBER, DIPLOMATIC, MILITARY, ECONOMIC
-- Add "confidence" score to each item (HIGH/MEDIUM/LOW)
-- Return richer metadata: top entities across all items, dominant threat category
+- Pass the original article `url` from GDELT data through to the AI analysis
+- Add `sourceUrl` field to each intel item in the tool call schema
+- AI preserves the original article URL
+
+**Changes to `src/components/dashboard/IntelFeed.tsx`:**
+- Make the source name a clickable link opening in a new tab
+- Add a small external link icon next to the source
 
 ---
 
-## Part 3: AI Situation Report Generator (NEW)
+## Part 3: Reddit Social Media Intelligence
 
-**What:** Add a "GENERATE SITREP" button that produces a full AI-generated intelligence situation report.
+**New edge function: `supabase/functions/reddit-intel/index.ts`**
+- Fetches from Reddit's free public JSON API (no auth needed):
+  - `reddit.com/r/geopolitics/search.json?q=iran&sort=new&limit=10`
+  - `reddit.com/r/worldnews/search.json?q=iran+OR+hormuz&sort=new&limit=10`
+  - `reddit.com/r/iran/hot.json?limit=10`
+- Returns structured social signal data: title, score, comments, url, subreddit
+- Runs through AI to extract sentiment and relevance
 
-**Changes to `src/components/dashboard/AIAssistant.tsx`:**
-- Add a "SITREP" quick-action button above the chat input
-- When clicked, sends all current live intel items + threat engine data + prediction market data to the AI
-- AI generates a structured SITREP with sections: SITUATION, THREAT ASSESSMENT, KEY INDICATORS, PREDICTION MARKET SIGNALS, RECOMMENDED ACTIONS
-- Displayed in a formatted card with section headers
-
----
-
-## Part 4: Visual Overhaul -- Stunning UI Upgrade
-
-### 4a. Dashboard Layout Redesign (`Dashboard.tsx`)
-- Change to a 3-column layout: Map (left, 50%) | Intel Feed (center, 25%) | Threat Engine + Markets + AI (right, 25%)
-- Add a second tab row: SITREP | MARKETS alongside existing THREAT MATRIX | NETWORK GRAPH
-- Animated panel transitions with framer-motion
-
-### 4b. Enhanced Intel Feed (`IntelFeed.tsx`)
-- Add threat_tag colored chips (MARITIME = blue, CYBER = purple, DIPLOMATIC = amber, MILITARY = red)
-- Add confidence badge on each item
-- Add "FLASH" animated badge for HIGH priority items with a pulsing red glow
-- Subtle card hover animations with border glow
-- Show the AI-generated flash report at the top of the feed as a highlighted banner
-
-### 4c. Enhanced Threat Engine (`ThreatEngine.tsx`)
-- Replace simple progress bars with animated radial/arc gauges for the top 4 threat probabilities
-- Add animated number counters that count up to the value
-- Add a "WATCHCON" badge with color-coded background (1=red, 2=amber, 3=yellow, 4=green, 5=blue)
-- Sparkline mini-charts next to each gauge showing trend direction
-
-### 4d. CSS/Styling Upgrades (`src/index.css`, `tailwind.config.ts`)
-- Add glassmorphism panel variant with backdrop-blur
-- Add animated gradient border effect for HIGH threat panels
-- Add new keyframe animations: `threat-flash`, `count-up`, `border-glow`
-- Add `animate-pulse-fast` for urgent indicators
+**New component: Social signals integrated into IntelFeed**
+- Reddit posts appear in the intel feed with a "REDDIT" source tag and direct link
+- Distinguished by a purple Reddit icon/tag
 
 ---
 
-## Part 5: Prediction Markets Integration into Threat Engine
+## Part 4: Database Persistence
 
-**What:** Feed Polymarket odds into the Threat Engine for more accurate assessments.
+**New database tables:**
 
-**Changes:**
-- Dashboard fetches prediction market data and passes it to ThreatEngine alongside live intel metadata
-- ThreatEngine edge function receives Polymarket odds as additional indicators
-- AI compares its calculated probabilities against market consensus and flags divergences
+1. **`intel_snapshots`** -- stores each hourly analysis run
+   - `id` (uuid, primary key)
+   - `created_at` (timestamp)
+   - `flash_report` (text)
+   - `article_count` (integer)
+   - `mil_track_count` (integer)
+   - `average_sentiment` (numeric)
+   - `dominant_category` (text)
+   - `items` (jsonb -- array of intel items)
+   - `source_type` (text -- 'gdelt', 'reddit', 'combined')
+
+2. **`market_snapshots`** -- stores Polymarket snapshots
+   - `id` (uuid, primary key)
+   - `created_at` (timestamp)
+   - `markets` (jsonb -- array of market data)
+
+3. **`threat_assessments`** -- stores threat engine results
+   - `id` (uuid, primary key)
+   - `created_at` (timestamp)
+   - `tension_index` (numeric)
+   - `watchcon` (text)
+   - `hormuz_closure` (numeric)
+   - `cyber_attack` (numeric)
+   - `proxy_escalation` (numeric)
+   - `direct_confrontation` (numeric)
+   - `analysis_narrative` (text)
+   - `market_divergences` (jsonb)
+   - `raw_indicators` (jsonb)
+
+All tables will have RLS disabled since this is public intelligence data with no user-specific access control needed.
 
 ---
 
-## Architecture
+## Part 5: Hourly Intelligence Agent (Cron Job)
 
-```text
-Dashboard.tsx (orchestrator)
-  |
-  |-- fetchLiveIntel() -> live-intel edge function
-  |     |-- 3x GDELT queries (Iran, US-mil, Cyber)
-  |     |-- ADS-B military count
-  |     |-- AI: Gemini Flash analyzes 30 articles
-  |     |-- Returns: items + flash report + metadata
-  |
-  |-- fetchMarkets() -> prediction-markets edge function
-  |     |-- Polymarket Gamma API (public, no auth)
-  |     |-- Returns: market odds for geopolitical events
-  |
-  |-- Passes all data to:
-        |-- IntelFeed (articles + flash report)
-        |-- ThreatEngine (indicators + market odds)
-        |-- PredictionMarkets (market data)
-        |-- AIAssistant (full context for chat + SITREP)
-```
+**New edge function: `supabase/functions/intel-agent/index.ts`**
+- Orchestrator function that runs every hour
+- Calls all data sources in parallel: GDELT (3 queries), ADS-B, Reddit (3 subreddits), Polymarket
+- Sends combined data to AI for comprehensive analysis
+- Stores results in all 3 database tables
+- Generates a comprehensive hourly SITREP stored in `intel_snapshots`
+
+**Cron setup:**
+- Uses `pg_cron` + `pg_net` extensions
+- Scheduled to run every hour: `0 * * * *`
+- Calls the `intel-agent` edge function via HTTP POST
+
+**Dashboard changes:**
+- On load, first reads latest data from database (instant)
+- Then fetches fresh data in background
+- Shows "Last analyzed: X minutes ago" indicator
+- Historical data available for trend analysis in ThreatEngine charts
 
 ---
 
-## All File Changes
+## File Changes Summary
 
 | File | Action | Description |
 |------|--------|-------------|
-| `supabase/functions/prediction-markets/index.ts` | CREATE | Polymarket Gamma API fetcher |
-| `src/components/dashboard/PredictionMarkets.tsx` | CREATE | Prediction markets panel |
-| `supabase/functions/live-intel/index.ts` | REWRITE | 3x GDELT queries, 30 articles, flash report, tags |
-| `src/components/dashboard/Dashboard.tsx` | MODIFY | New layout, fetch markets, pass data everywhere |
-| `src/components/dashboard/IntelFeed.tsx` | MODIFY | Tags, confidence, flash banner, visual polish |
-| `src/components/dashboard/ThreatEngine.tsx` | MODIFY | Radial gauges, WATCHCON badge, market integration |
-| `src/components/dashboard/AIAssistant.tsx` | MODIFY | SITREP generator, market context |
-| `supabase/functions/threat-engine/index.ts` | MODIFY | Accept market odds as indicators |
-| `src/index.css` | MODIFY | New animations, glassmorphism, glow effects |
-| `tailwind.config.ts` | MODIFY | New animation keyframes |
-| `supabase/config.toml` | MODIFY | Register prediction-markets function |
+| `supabase/functions/prediction-markets/index.ts` | REWRITE | Use `/public-search` for Iran-focused results, add URLs |
+| `supabase/functions/live-intel/index.ts` | MODIFY | Add `sourceUrl` to items from GDELT article URLs |
+| `supabase/functions/reddit-intel/index.ts` | CREATE | Reddit public API fetcher + AI analysis |
+| `supabase/functions/intel-agent/index.ts` | CREATE | Hourly orchestrator that fetches all sources, analyzes, stores |
+| `src/components/dashboard/IntelFeed.tsx` | MODIFY | Clickable source links, Reddit items, external link icons |
+| `src/components/dashboard/PredictionMarkets.tsx` | MODIFY | Clickable market links to Polymarket, Iran-focused display |
+| `src/components/dashboard/Dashboard.tsx` | MODIFY | Load initial data from DB, show last-analyzed time |
+| `supabase/config.toml` | MODIFY | Register new edge functions |
+| Database migration | CREATE | 3 new tables: `intel_snapshots`, `market_snapshots`, `threat_assessments` |
+| pg_cron setup | CREATE | Hourly scheduled job calling `intel-agent` |
 
 ---
 
+## Technical Architecture
+
+```text
+HOURLY CRON (pg_cron)
+  |
+  +--> intel-agent edge function
+        |
+        |-- GDELT x3 (Iran, US-mil, Cyber)
+        |-- ADS-B military aircraft
+        |-- Reddit x3 (r/geopolitics, r/worldnews, r/iran)
+        |-- Polymarket /public-search?q=iran
+        |
+        +--> AI Analysis (Gemini Flash)
+        |     |-- Combines all sources
+        |     |-- Generates SITREP + threat assessment
+        |
+        +--> Store in Database
+              |-- intel_snapshots (articles + reddit + flash report)
+              |-- market_snapshots (Polymarket odds)
+              |-- threat_assessments (probabilities + narrative)
+
+DASHBOARD (loads from DB first, then live)
+  |-- IntelFeed: clickable source links, Reddit items
+  |-- PredictionMarkets: Iran-focused, links to Polymarket
+  |-- ThreatEngine: reads historical assessments for trend charts
+  |-- AI Assistant: full context from DB history
+```
+
 ## Free APIs Used
 
-| API | Endpoint | Data |
-|-----|----------|------|
-| Polymarket Gamma | `GET /events?active=true&...` | Live prediction market odds |
-| GDELT DOC 2.0 | `GET /api/v2/doc/doc?...` (x3 queries) | Real-time conflict news |
-| adsb.lol | `GET /v2/mil` | Military aircraft positions |
-| CartoDB | Dark Matter tiles | Map tiles |
-
-All free, no API keys required.
-
+| API | Auth | Data |
+|-----|------|------|
+| Polymarket `/public-search` | None | Iran prediction market odds |
+| Reddit `.json` endpoints | None | Social signals from r/geopolitics, r/worldnews, r/iran |
+| GDELT DOC 2.0 | None | Real-time conflict news |
+| adsb.lol | None | Military aircraft positions |
