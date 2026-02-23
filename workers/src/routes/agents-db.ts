@@ -27,7 +27,10 @@ function cleanUrl(raw: string): string {
 
 async function fetchGdelt(query: string, max: number): Promise<unknown[]> {
   try {
-    const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=artlist&format=json&maxrecords=${max}&sort=datedesc`;
+    // Only fetch articles from last 72 hours to ensure freshness
+    const cutoff = new Date(Date.now() - 72 * 60 * 60 * 1000);
+    const startdt = cutoff.toISOString().replace(/[-T:]/g, "").slice(0, 14);
+    const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=artlist&format=json&maxrecords=${max}&sort=datedesc&startdatetime=${startdt}`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
     const resp = await fetch(url, { signal: controller.signal });

@@ -101,7 +101,10 @@ async function fetchGdelt(): Promise<RawArticle[]> {
     const query = '(iran OR IRGC OR tehran OR hormuz OR houthi OR hezbollah OR CENTCOM) (military OR nuclear OR sanctions OR strike OR threat OR missile OR drone OR tanker OR "carrier strike")';
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
-    const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=artlist&format=json&maxrecords=20&sort=datedesc`;
+    // Only fetch articles from last 48 hours for live intel freshness
+    const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    const startdt = cutoff.toISOString().replace(/[-T:]/g, "").slice(0, 14);
+    const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=artlist&format=json&maxrecords=20&sort=datedesc&startdatetime=${startdt}`;
     const resp = await fetch(url, { signal: controller.signal });
     clearTimeout(timeout);
     if (!resp.ok) return [];
