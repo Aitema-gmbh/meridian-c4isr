@@ -1,21 +1,26 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
-import ThreatMatrix from "./ThreatMatrix";
+import { apiFetch } from "@/lib/api";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import IntelFeed from "./IntelFeed";
-import ThreatEngine from "./ThreatEngine";
-import NetworkGraph from "./NetworkGraph";
-import AIAssistant from "./AIAssistant";
-import PredictionMarkets from "./PredictionMarkets";
-import AgentStatusPanel from "./AgentStatusPanel";
-import SignalTimeline from "./SignalTimeline";
-import CountryBrief from "./CountryBrief";
+
+const ThreatMatrix = lazy(() => import("./ThreatMatrix"));
+const ThreatEngine = lazy(() => import("./ThreatEngine"));
+const NetworkGraph = lazy(() => import("./NetworkGraph"));
+const AIAssistant = lazy(() => import("./AIAssistant"));
+const PredictionMarkets = lazy(() => import("./PredictionMarkets"));
+const AgentStatusPanel = lazy(() => import("./AgentStatusPanel"));
+const SignalTimeline = lazy(() => import("./SignalTimeline"));
+const CountryBrief = lazy(() => import("./CountryBrief"));
+const PatternMatch = lazy(() => import("./PatternMatch"));
+const BriefingViewer = lazy(() => import("./BriefingViewer"));
 
 const DEDICATION = "Dedicated to Manos, Ghassan and Fedo";
-const LIVE_INTEL_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/live-intel`;
-const REDDIT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reddit-intel`;
-const MARKETS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/prediction-markets`;
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://meridian-api.dieter-meier82.workers.dev";
+const LIVE_INTEL_URL = `${API_BASE}/live-intel`;
+const REDDIT_URL = `${API_BASE}/reddit-intel`;
+const MARKETS_URL = `${API_BASE}/prediction-markets`;
 
 interface IntelItem {
   id: number;
@@ -61,60 +66,132 @@ interface MarketsData {
   timestamp: string;
 }
 
+interface TickerAssessment {
+  tension_index: number;
+  watchcon: string;
+  hormuz_closure: number;
+  created_at: string;
+}
+
+const LazyFallback = ({ label }: { label: string }) => (
+  <div className="h-full flex items-center justify-center bg-background scanline">
+    <div className="flex flex-col items-center gap-2">
+      <div className="h-5 w-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+      <span className="text-[9px] font-mono text-primary/60 tracking-widest uppercase">{label}</span>
+      <div className="w-16 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
+    </div>
+  </div>
+);
+
 const DataTicker = ({ liveData, marketsData, lastAnalyzed }: { liveData: LiveIntelData | null; marketsData: MarketsData | null; lastAnalyzed: string | null }) => {
   const [time, setTime] = useState(new Date());
+  const [assessment, setAssessment] = useState<TickerAssessment | null>(null);
+  const [agentCount, setAgentCount] = useState(0);
+  const [alertItems, setAlertItems] = useState<string[]>([]);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
+  // Fetch latest assessment + agent stats for ticker
+  useEffect(() => {
+    const loadTickerData = async () => {
+      try {
+        const [assessRes, reportsRes] = await Promise.allSettled([
+          apiFetch<{ assessments: Record<string, unknown>[] }>("/api/threat-assessments", { limit: "1" }),
+          apiFetch<{ reports: Record<string, unknown>[] }>("/api/agent-reports", { hours: "3" }),
+        ]);
+
+        if (assessRes.status === "fulfilled" && assessRes.value.assessments?.[0]) {
+          const a = assessRes.value.assessments[0];
+          setAssessment({
+            tension_index: Number(a.tension_index) || 0,
+            watchcon: String(a.watchcon || "?"),
+            hormuz_closure: Number(a.hormuz_closure) || 0,
+            created_at: String(a.created_at || ""),
+          });
+        }
+
+        if (reportsRes.status === "fulfilled" && reportsRes.value.reports) {
+          const reports = reportsRes.value.reports;
+          const agents = new Set(reports.map((r: Record<string, unknown>) => r.agent_name));
+          setAgentCount(agents.size);
+
+          // Find elevated agents
+          const elevated = reports.filter((r: Record<string, unknown>) =>
+            Number(r.threat_level) > 60 && r.agent_name !== "head-analyst"
+          );
+          const uniqueElevated = [...new Set(elevated.map((r: Record<string, unknown>) => String(r.agent_name)))];
+          if (uniqueElevated.length >= 3) {
+            setAlertItems([`CONVERGENCE: ${uniqueElevated.length} AGENTS ELEVATED (${uniqueElevated.map(n => n.toUpperCase()).join(", ")})`]);
+          }
+        }
+      } catch {}
+    };
+    loadTickerData();
+    const interval = setInterval(loadTickerData, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
   const m = liveData?.metadata;
   const topMarket = marketsData?.markets?.[0];
   const agoMinutes = lastAnalyzed ? Math.round((Date.now() - new Date(lastAnalyzed).getTime()) / 60000) : null;
+  const ti = assessment?.tension_index || 0;
+  const wc = assessment?.watchcon || "?";
+
   const items = [
-    "CENTCOM AOR: WATCHCON 2",
-    agoMinutes !== null ? `LAST AGENT RUN: ${agoMinutes}m AGO` : "AGENT: AWAITING FIRST RUN",
-    m ? `ADS-B: ${m.milTrackCount} MIL TRACKS ACTIVE` : "ADS-B: ACQUIRING...",
-    m ? `GDELT: ${m.articleCount} CONFLICT ARTICLES (3 STREAMS)` : "GDELT: LOADING...",
-    m ? `OSINT SENTIMENT: ${(m.averageSentiment ?? 0).toFixed(2)}` : "OSINT: ANALYZING...",
-    m?.dominantCategory ? `DOMINANT THREAT: ${m.dominantCategory}` : "THREAT: CALCULATING...",
-    topMarket ? `POLYMARKET: ${topMarket.question.slice(0, 40)}... ${topMarket.yesPrice ?? '?'}%` : "POLYMARKET: LOADING...",
-    "MARITIME: AIS GAPS DETECTED — HORMUZ WEST",
-    "CYBER: APT CAMPAIGNS ACTIVE",
-    "REDDIT: SOCIAL SIGNALS MONITORED",
-  ];
+    `TENSION INDEX: ${ti}/100 | WATCHCON ${wc}`,
+    `AGENTS: ${agentCount}/15 ACTIVE`,
+    agoMinutes !== null ? `LAST INTEL: ${agoMinutes}m AGO` : "INTEL: AWAITING",
+    ...alertItems,
+    m ? `ADS-B: ${m.milTrackCount} MIL TRACKS` : "ADS-B: ACQUIRING",
+    m ? `GDELT: ${m.articleCount} ARTICLES` : "GDELT: LOADING",
+    m ? `SENTIMENT: ${(m.averageSentiment ?? 0).toFixed(2)}` : "",
+    topMarket?.question ? `MKT: ${topMarket.question.slice(0, 35)}... ${topMarket.yesPrice ?? '?'}%` : "",
+    `HORMUZ: ${assessment?.hormuz_closure || 0}%`,
+    `14 SOURCES: ADS-B | GDELT | POLYMARKET | REDDIT | TELEGRAM | ACLED | PENTAGON | CYBER | WIKIMEDIA | FIRMS | MACRO`,
+  ].filter(Boolean);
+
+  const wcColor = parseInt(wc) <= 2 ? "text-crimson" : parseInt(wc) <= 3 ? "text-amber" : "text-tactical-green";
 
   return (
     <div className="flex items-center h-7 bg-panel border-b border-panel-border overflow-hidden">
       <div className="flex items-center gap-2 px-3 border-r border-panel-border shrink-0">
-        <div className="h-1.5 w-1.5 rounded-full bg-tactical-green" />
-        <span className="text-[10px] font-mono text-tactical-green">LIVE</span>
+        <div className={`h-1.5 w-1.5 rounded-full ${ti > 70 ? "bg-crimson animate-pulse" : "bg-tactical-green"}`} />
+        <span className={`text-[10px] font-mono font-bold ${wcColor}`}>WC-{wc}</span>
       </div>
       <div className="flex-1 overflow-hidden">
         <motion.div
           className="flex items-center gap-8 whitespace-nowrap"
-          animate={{ x: [0, -2400] }}
-          transition={{ duration: 45, repeat: Infinity, ease: "linear" }}
+          animate={{ x: [0, -3000] }}
+          transition={{ duration: 50, repeat: Infinity, ease: "linear" }}
         >
           {[...items, ...items].map((item, i) => (
-            <span key={i} className="text-[10px] font-mono text-muted-foreground">
+            <span key={i} className={`text-[10px] font-mono ${
+              item.includes("CONVERGENCE") ? "text-crimson font-bold" :
+              item.includes("TENSION") ? (ti > 70 ? "text-crimson" : "text-amber") :
+              "text-muted-foreground"
+            }`}>
               ▸ {item}
             </span>
           ))}
         </motion.div>
       </div>
       <div className="flex items-center gap-3 px-3 border-l border-panel-border shrink-0">
+        <span className={`text-[10px] font-mono font-bold ${ti > 70 ? "text-crimson" : ti > 40 ? "text-amber" : "text-tactical-green"}`}>
+          TI:{ti}
+        </span>
         <span className="text-[10px] font-mono text-muted-foreground">
           {time.toLocaleTimeString("en-US", { hour12: false })}Z
         </span>
-        <span className="text-[10px] font-mono text-primary/50">MERIDIAN v4.0</span>
+        <span className="text-[10px] font-mono text-primary/50">v5.0</span>
       </div>
     </div>
   );
 };
 
-type TabView = "map" | "network" | "agents" | "timeline" | "countries";
+type TabView = "map" | "agents" | "timeline" | "countries" | "patterns";
 type RightTab = "threat" | "markets";
 
 const Dashboard = () => {
@@ -125,29 +202,61 @@ const Dashboard = () => {
   const [intelLoading, setIntelLoading] = useState(false);
   const [marketsLoading, setMarketsLoading] = useState(false);
   const [lastAnalyzed, setLastAnalyzed] = useState<string | null>(null);
+  const [apiHealthy, setApiHealthy] = useState<boolean | null>(null);
+  const [showBriefing, setShowBriefing] = useState(false);
+
+  // Keyboard shortcuts: 1-5 to switch tabs
+  useEffect(() => {
+    const tabKeys: Record<string, TabView> = {
+      "1": "map",
+      "2": "agents",
+      "3": "timeline",
+      "4": "countries",
+      "5": "patterns",
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore when typing in input/textarea/contenteditable
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+      const tab = tabKeys[e.key];
+      if (tab) setActiveTab(tab);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // API health check: ping every 30s
+  useEffect(() => {
+    const checkHealth = async () => {
+      try {
+        const res = await apiFetch<{ assessments: Record<string, unknown>[] }>("/api/threat-assessments", { limit: "1" });
+        setApiHealthy(!!res?.assessments);
+      } catch {
+        setApiHealthy(false);
+      }
+    };
+    checkHealth();
+    const interval = setInterval(checkHealth, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Load latest data from DB on mount (instant)
   const loadFromDB = useCallback(async () => {
     try {
-      const [intelSnap, marketSnap] = await Promise.all([
-        supabase.from("intel_snapshots").select("*").order("created_at", { ascending: false }).limit(1),
-        supabase.from("market_snapshots").select("*").order("created_at", { ascending: false }).limit(1),
-      ]);
-
-      if (intelSnap.data?.[0]) {
-        const snap = intelSnap.data[0] as any;
+      const snap = await apiFetch<{ items?: IntelItem[]; flashReport?: string | null; metadata?: Record<string, unknown>; snapshotTime?: string }>("/api/intel-snapshot").catch(() => null);
+      if (snap?.items?.length) {
         setLiveData({
-          items: (snap.items || []) as IntelItem[],
-          flashReport: snap.flash_report,
+          items: snap.items,
+          flashReport: snap.flashReport ?? null,
           metadata: {
-            articleCount: snap.article_count || 0,
-            milTrackCount: snap.mil_track_count || 0,
-            averageSentiment: Number(snap.average_sentiment) || -0.5,
-            timestamp: snap.created_at,
-            dominantCategory: snap.dominant_category,
+            articleCount: Number((snap.metadata as Record<string, unknown>)?.articleCount) || 0,
+            milTrackCount: Number((snap.metadata as Record<string, unknown>)?.milTrackCount) || 0,
+            averageSentiment: Number((snap.metadata as Record<string, unknown>)?.averageSentiment) || -0.5,
+            timestamp: String((snap.metadata as Record<string, unknown>)?.timestamp || snap.snapshotTime || ""),
+            dominantCategory: String((snap.metadata as Record<string, unknown>)?.dominantCategory || ""),
           },
         });
-        setLastAnalyzed(snap.created_at);
+        if (snap.snapshotTime) setLastAnalyzed(snap.snapshotTime);
       }
 
       // Skip DB fallback for markets — stale data causes irrelevant threat analysis
@@ -164,12 +273,12 @@ const Dashboard = () => {
       const [intelResp, redditResp] = await Promise.allSettled([
         fetch(LIVE_INTEL_URL, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || ""}` },
           body: JSON.stringify({}),
         }),
         fetch(REDDIT_URL, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || ""}` },
           body: JSON.stringify({}),
         }),
       ]);
@@ -215,7 +324,7 @@ const Dashboard = () => {
     try {
       const resp = await fetch(MARKETS_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || ""}` },
         body: JSON.stringify({}),
       });
       if (!resp.ok) throw new Error("Markets fetch failed");
@@ -251,17 +360,17 @@ const Dashboard = () => {
             <span className="font-sans text-sm font-bold tracking-wider text-primary">MERIDIAN</span>
           </div>
           <div className="h-4 w-px bg-panel-border" />
-          <span className="text-[10px] font-mono text-muted-foreground">C4ISR INTELLIGENCE PLATFORM</span>
+          <span className="text-[10px] font-mono text-muted-foreground tracking-widest">C4ISR INTELLIGENCE PLATFORM</span>
         </div>
 
         <div className="flex items-center gap-2">
           {([
-            { key: "map", label: "THREAT MATRIX" },
-            { key: "network", label: "NETWORK GRAPH" },
-            { key: "agents", label: "AGENTS" },
-            { key: "timeline", label: "TIMELINE" },
-            { key: "countries", label: "CII" },
-          ] as { key: TabView; label: string }[]).map(tab => (
+            { key: "map", label: "THREAT MATRIX", shortcut: "1" },
+            { key: "agents", label: "AGENTS", shortcut: "2" },
+            { key: "timeline", label: "TIMELINE", shortcut: "3" },
+            { key: "countries", label: "CII", shortcut: "4" },
+            { key: "patterns", label: "PATTERNS", shortcut: "5" },
+          ] as { key: TabView; label: string; shortcut: string }[]).map(tab => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
@@ -270,10 +379,30 @@ const Dashboard = () => {
                   ? "border-primary/50 text-primary bg-primary/10"
                   : "border-panel-border text-muted-foreground hover:text-foreground"
               }`}
+              title={`${tab.label} (${tab.shortcut})`}
             >
               {tab.label}
             </button>
           ))}
+          <div className="h-4 w-px bg-panel-border ml-1" />
+          <button
+            onClick={() => setShowBriefing(true)}
+            className="text-[9px] font-mono px-2 py-0.5 rounded-sm border border-amber/30 text-amber hover:bg-amber/10 transition-colors ml-1"
+            title="Intelligence Briefings"
+          >
+            BRIEFINGS
+          </button>
+          <div className="h-4 w-px bg-panel-border ml-1" />
+          <div className="flex items-center gap-1.5 ml-1" title={apiHealthy === null ? "API: checking..." : apiHealthy ? "API: healthy" : "API: unreachable"}>
+            <div className={`h-2 w-2 rounded-full ${
+              apiHealthy === null
+                ? "bg-muted-foreground animate-pulse"
+                : apiHealthy
+                  ? "bg-tactical-green"
+                  : "bg-crimson animate-pulse"
+            }`} />
+            <span className="text-[9px] font-mono text-muted-foreground">API</span>
+          </div>
         </div>
       </div>
 
@@ -293,11 +422,15 @@ const Dashboard = () => {
               transition={{ duration: 0.2 }}
               className="h-full"
             >
-              {activeTab === "map" && <ThreatMatrix />}
-              {activeTab === "network" && <NetworkGraph />}
-              {activeTab === "agents" && <AgentStatusPanel />}
-              {activeTab === "timeline" && <SignalTimeline />}
-              {activeTab === "countries" && <CountryBrief />}
+              <Suspense fallback={<LazyFallback label="LOADING MODULE" />}>
+                <ErrorBoundary fallbackLabel={activeTab.toUpperCase()}>
+                  {activeTab === "map" && <ThreatMatrix />}
+                  {activeTab === "agents" && <AgentStatusPanel />}
+                  {activeTab === "timeline" && <SignalTimeline />}
+                  {activeTab === "countries" && <CountryBrief />}
+                  {activeTab === "patterns" && <PatternMatch />}
+                </ErrorBoundary>
+              </Suspense>
             </motion.div>
           </AnimatePresence>
         </div>
@@ -340,22 +473,32 @@ const Dashboard = () => {
 
           {/* Top right: Threat Engine or Markets */}
           <div className="flex-1 overflow-hidden min-h-0">
-            <AnimatePresence mode="wait">
-              {rightTab === "threat" ? (
-                <motion.div key="threat" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full">
-                  <ThreatEngine liveMetadata={liveData?.metadata || null} marketData={marketsData?.markets || []} />
-                </motion.div>
-              ) : (
-                <motion.div key="markets" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full">
-                  <PredictionMarkets markets={marketsData?.markets || []} loading={marketsLoading} onRefresh={fetchMarkets} />
-                </motion.div>
-              )}
-            </AnimatePresence>
+            <Suspense fallback={<LazyFallback label="LOADING" />}>
+              <AnimatePresence mode="wait">
+                {rightTab === "threat" ? (
+                  <motion.div key="threat" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full">
+                    <ErrorBoundary fallbackLabel="THREAT ENGINE">
+                      <ThreatEngine liveMetadata={liveData?.metadata || null} marketData={marketsData?.markets || []} />
+                    </ErrorBoundary>
+                  </motion.div>
+                ) : (
+                  <motion.div key="markets" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full">
+                    <ErrorBoundary fallbackLabel="MARKETS">
+                      <PredictionMarkets markets={marketsData?.markets || []} loading={marketsLoading} onRefresh={fetchMarkets} />
+                    </ErrorBoundary>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </Suspense>
           </div>
 
           {/* Bottom right: AI Assistant */}
           <div className="h-[40%] border-t border-panel-border overflow-hidden">
-            <AIAssistant liveData={liveData} marketsData={marketsData} />
+            <Suspense fallback={<LazyFallback label="AI ASSISTANT" />}>
+              <ErrorBoundary fallbackLabel="AI ASSISTANT">
+                <AIAssistant liveData={liveData} marketsData={marketsData} />
+              </ErrorBoundary>
+            </Suspense>
           </div>
         </div>
       </div>
@@ -366,6 +509,11 @@ const Dashboard = () => {
           {DEDICATION}
         </span>
       </div>
+
+      {/* Briefing Modal */}
+      <Suspense fallback={null}>
+        <BriefingViewer isOpen={showBriefing} onClose={() => setShowBriefing(false)} />
+      </Suspense>
     </div>
   );
 };

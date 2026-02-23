@@ -1,3 +1,4 @@
+import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ExternalLink } from "lucide-react";
@@ -14,6 +15,7 @@ interface IntelItem {
   threat_tag?: string;
   confidence?: string;
   isReddit?: boolean;
+  corroboration_score?: number;
 }
 
 interface IntelFeedProps {
@@ -44,6 +46,27 @@ const confidenceColors: Record<string, string> = {
 };
 
 const IntelFeed = ({ items = [], loading, onRefresh, flashReport }: IntelFeedProps) => {
+  const [entityFilter, setEntityFilter] = useState<string | null>(null);
+
+  // Compute entity frequency and co-occurrences
+  const { topEntities, filteredItems } = useMemo(() => {
+    const freq: Record<string, number> = {};
+    for (const item of items) {
+      for (const e of item.entities) {
+        freq[e] = (freq[e] || 0) + 1;
+      }
+    }
+    const sorted = Object.entries(freq)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 12);
+
+    const filtered = entityFilter
+      ? items.filter(it => it.entities.some(e => e.toLowerCase() === entityFilter.toLowerCase()))
+      : items;
+
+    return { topEntities: sorted, filteredItems: filtered };
+  }, [items, entityFilter]);
+
   return (
     <div className="panel-tactical flex flex-col h-full">
       <div className="flex items-center justify-between px-3 py-2 border-b border-panel-border bg-panel-header">
@@ -54,7 +77,7 @@ const IntelFeed = ({ items = [], loading, onRefresh, flashReport }: IntelFeedPro
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-muted-foreground">{items.length} ITEMS</span>
+          <span className="text-[10px] text-muted-foreground">{entityFilter ? `${filteredItems.length}/${items.length}` : items.length} ITEMS</span>
           <button
             onClick={onRefresh}
             disabled={loading}
@@ -64,6 +87,36 @@ const IntelFeed = ({ items = [], loading, onRefresh, flashReport }: IntelFeedPro
           </button>
         </div>
       </div>
+
+      {/* Entity Knowledge Bar */}
+      {topEntities.length > 0 && (
+        <div className="px-2 py-1 border-b border-panel-border/50 bg-secondary/10 shrink-0">
+          <div className="flex items-center gap-1 flex-wrap">
+            {entityFilter && (
+              <button
+                onClick={() => setEntityFilter(null)}
+                className="text-[7px] font-mono px-1 py-0.5 rounded-sm border border-crimson/30 text-crimson hover:bg-crimson/10 transition-colors mr-0.5"
+              >
+                CLEAR
+              </button>
+            )}
+            {topEntities.map(([entity, count]) => (
+              <button
+                key={entity}
+                onClick={() => setEntityFilter(entityFilter === entity ? null : entity)}
+                className={`text-[7px] font-mono px-1.5 py-0.5 rounded-sm border transition-colors ${
+                  entityFilter === entity
+                    ? "border-primary/50 text-primary bg-primary/15"
+                    : "border-primary/10 text-primary/50 hover:text-primary/80 hover:bg-primary/5"
+                }`}
+              >
+                {entity}
+                <span className="ml-0.5 text-muted-foreground/40">{count}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-2 space-y-2">
         {/* Flash Report Banner */}
@@ -102,7 +155,7 @@ const IntelFeed = ({ items = [], loading, onRefresh, flashReport }: IntelFeedPro
           </div>
         )}
 
-        {items.map((item, i) => (
+        {filteredItems.map((item, i) => (
           <motion.div
             key={item.id}
             initial={{ opacity: 0, x: -20 }}
@@ -135,6 +188,11 @@ const IntelFeed = ({ items = [], loading, onRefresh, flashReport }: IntelFeedPro
                     CONF:{item.confidence}
                   </span>
                 )}
+                {item.corroboration_score && item.corroboration_score >= 2 && (
+                  <span className="text-[8px] font-mono px-1 py-0.5 rounded-sm border text-tactical-green bg-tactical-green/10 border-tactical-green/20" title={`Confirmed by ${item.corroboration_score} sources`}>
+                    CORROB:{item.corroboration_score}
+                  </span>
+                )}
               </div>
               <span className="text-[9px] text-muted-foreground font-mono">
                 {new Date(item.timestamp).toLocaleTimeString("en-US", { hour12: false })}Z
@@ -160,12 +218,17 @@ const IntelFeed = ({ items = [], loading, onRefresh, flashReport }: IntelFeedPro
             </p>
             <div className="flex items-center gap-1.5 flex-wrap">
               {item.entities.map((entity) => (
-                <span
+                <button
                   key={entity}
-                  className="text-[9px] text-primary/60 bg-primary/5 border border-primary/10 rounded-sm px-1.5 py-0.5 font-mono"
+                  onClick={() => setEntityFilter(entityFilter === entity ? null : entity)}
+                  className={`text-[9px] rounded-sm px-1.5 py-0.5 font-mono border transition-colors ${
+                    entityFilter === entity
+                      ? "text-primary bg-primary/15 border-primary/30"
+                      : "text-primary/60 bg-primary/5 border-primary/10 hover:bg-primary/10"
+                  }`}
                 >
                   {entity}
-                </span>
+                </button>
               ))}
               <span className={`text-[9px] font-mono ml-auto ${item.sentiment < -0.6 ? "text-crimson" : item.sentiment < -0.4 ? "text-amber" : "text-muted-foreground"}`}>
                 SENT: {item.sentiment.toFixed(2)}

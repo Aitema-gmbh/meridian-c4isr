@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, memo } from "react";
 import { motion } from "framer-motion";
-import { supabase } from "@/integrations/supabase/client";
+import { apiFetch } from "@/lib/api";
 
 interface TimelineEvent {
   id: string;
@@ -30,22 +30,15 @@ const SignalTimeline = () => {
 
   useEffect(() => {
     const load = async () => {
-      const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      const { data } = await supabase
-        .from("agent_reports")
-        .select("id, agent_name, summary, threat_level, created_at")
-        .gte("created_at", cutoff)
-        .order("created_at", { ascending: false })
-        .limit(50);
-
-      if (data) {
-        setEvents(data.map(r => ({
-          id: r.id,
-          agentName: r.agent_name,
-          summary: r.summary || "",
+      const { timeline } = await apiFetch<{ timeline: Record<string, unknown>[] }>("/api/signal-timeline", { hours: "24" });
+      if (timeline) {
+        setEvents(timeline.map((r: Record<string, unknown>) => ({
+          id: String(r.id),
+          agentName: String(r.agent_name),
+          summary: String(r.summary || ""),
           threatLevel: Number(r.threat_level) || 0,
-          createdAt: r.created_at,
-          minutesAgo: Math.round((Date.now() - new Date(r.created_at).getTime()) / 60000),
+          createdAt: String(r.created_at),
+          minutesAgo: Math.round((Date.now() - new Date(r.created_at as string).getTime()) / 60000),
         })));
       }
     };
@@ -105,4 +98,4 @@ const SignalTimeline = () => {
   );
 };
 
-export default SignalTimeline;
+export default memo(SignalTimeline);

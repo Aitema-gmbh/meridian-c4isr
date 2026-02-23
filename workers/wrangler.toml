@@ -1,0 +1,16 @@
+name = "meridian-api"
+main = "src/index.ts"
+compatibility_date = "2025-02-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ENVIRONMENT = "production"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "meridian-db"
+database_id = "9c976bbc-bc9a-4af7-a501-05b5e194823a"
+
+# Secrets: wrangler secret put GOOGLE_API_KEY
+# wrangler secret put AISSTREAM_API_KEY (optional)
+# wrangler secret put NASA_FIRMS_API_KEY (optional)

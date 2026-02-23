@@ -4,18 +4,39 @@ import Dashboard from "@/components/dashboard/Dashboard";
 
 const DEDICATION = "Dedicated to Manos, Ghassan and Fedo";
 
+const ARMCHAIR_CAPTIONS = [
+  "ARMCHAIR GENERAL VERSION",
+  "COUCH COMMAND EDITION",
+  "PAJAMA WARFARE SUITE",
+  "STRATEGIC SOFA DIVISION",
+  "THREAT LEVEL: SNACKS LOW",
+  "CTRL+ALT+DEPLOY",
+  "SITUATION ROOM: LIVING ROOM",
+  "CLEARANCE: WIFI PASSWORD",
+  "INTEL SOURCE: TRUST ME BRO",
+  "OPERATIONAL TEMPO: AFTER COFFEE",
+];
+
 const InitScreen = ({ onComplete }: { onComplete: () => void }) => {
   const [phase, setPhase] = useState(0);
+  const [captionIdx, setCaptionIdx] = useState(() => Math.floor(Math.random() * ARMCHAIR_CAPTIONS.length));
 
   useEffect(() => {
     const timers = [
       setTimeout(() => setPhase(1), 500),
-      setTimeout(() => setPhase(2), 1500),
-      setTimeout(() => setPhase(3), 2800),
-      setTimeout(() => onComplete(), 4200),
+      setTimeout(() => setPhase(2), 3000),
+      setTimeout(() => setPhase(3), 5500),
+      setTimeout(() => onComplete(), 8000),
     ];
     return () => timers.forEach(clearTimeout);
   }, [onComplete]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCaptionIdx(prev => (prev + 1) % ARMCHAIR_CAPTIONS.length);
+    }, 1800);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <motion.div
@@ -51,6 +72,45 @@ const InitScreen = ({ onComplete }: { onComplete: () => void }) => {
             </p>
           </div>
         </div>
+
+        {/* Armchair General Sticker */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0, rotate: -15 }}
+          animate={{
+            opacity: phase >= 1 ? 1 : 0,
+            scale: phase >= 1 ? 1 : 0,
+            rotate: phase >= 1 ? [0, -3, 3, -2, 0] : -15,
+          }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          className="flex flex-col items-center gap-3"
+        >
+          <div className="relative">
+            <img
+              src="/armchair-general.png"
+              alt="Armchair General"
+              className="h-44 w-auto drop-shadow-[0_0_20px_hsl(185,80%,50%,0.5)]"
+            />
+            <motion.div
+              className="absolute -bottom-1 -right-2 bg-amber-500/90 text-black text-[7px] font-bold px-1.5 py-0.5 rounded-sm rotate-12 font-mono"
+              animate={{ scale: [1, 1.1, 1] }}
+              transition={{ repeat: Infinity, duration: 2 }}
+            >
+              v5.0
+            </motion.div>
+          </div>
+          <AnimatePresence mode="wait">
+            <motion.p
+              key={captionIdx}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.4 }}
+              className="text-[10px] font-mono tracking-[0.25em] text-amber-400/80"
+            >
+              ★ {ARMCHAIR_CAPTIONS[captionIdx]} ★
+            </motion.p>
+          </AnimatePresence>
+        </motion.div>
 
         {/* Status lines */}
         <motion.div
