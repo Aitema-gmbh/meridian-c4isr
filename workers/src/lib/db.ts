@@ -153,6 +153,46 @@ export async function getLatestAgentReport(db: D1Database, agentName: string, cu
   return { ...row, data: JSON.parse(row.data as string) } as AgentReport;
 }
 
+/**
+ * Get agent report history for the last N hours — used by Head Analyst for 3-day context.
+ * Returns summary + threat_level for each report, ordered newest first.
+ * Limited to 1 report per 2h window to keep context manageable.
+ */
+export async function getAgentHistory(db: D1Database, agentName: string, hours: number = 72): Promise<{ summary: string; threat_level: number; items_count: number; created_at: string }[]> {
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  const rows = await db.prepare(
+    `SELECT summary, threat_level, items_count, created_at FROM agent_reports
+     WHERE agent_name = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 100`
+  ).bind(agentName, cutoff).all<{ summary: string; threat_level: number; items_count: number; created_at: string }>();
+
+  if (!rows.results?.length) return [];
+
+  // Downsample: keep 1 report per 2h window for context efficiency
+  const sampled: typeof rows.results = [];
+  let lastBucket = -1;
+  for (const r of rows.results) {
+    const hoursAgo = (Date.now() - new Date(r.created_at).getTime()) / (1000 * 60 * 60);
+    const bucket = Math.floor(hoursAgo / 2);
+    if (bucket !== lastBucket) {
+      sampled.push(r);
+      lastBucket = bucket;
+    }
+  }
+  return sampled;
+}
+
+/**
+ * Get tension index history for the last N hours — for trend analysis.
+ */
+export async function getTensionHistory(db: D1Database, hours: number = 72): Promise<{ tension_index: number; watchcon: string; created_at: string }[]> {
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  const rows = await db.prepare(
+    `SELECT tension_index, watchcon, created_at FROM threat_assessments
+     WHERE created_at >= ? ORDER BY created_at DESC LIMIT 100`
+  ).bind(cutoff).all<{ tension_index: number; watchcon: string; created_at: string }>();
+  return rows.results || [];
+}
+
 export async function insertThreatAssessment(db: D1Database, a: Omit<ThreatAssessment, "id" | "created_at">): Promise<void> {
   await db.prepare(
     `INSERT INTO threat_assessments

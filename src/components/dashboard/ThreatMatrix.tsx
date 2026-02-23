@@ -211,7 +211,7 @@ function chokepointColor(riskScore: number): string {
 interface MapIntelEvent {
   lat: number;
   lon: number;
-  type: "maritime" | "military" | "diplomatic" | "incident";
+  type: "maritime" | "military" | "diplomatic" | "incident" | "nuclear" | "cyber" | "protest" | "energy";
   title: string;
   source: string;
   severity: number;
@@ -226,13 +226,60 @@ interface ChokepointData {
   articleCount: number;
 }
 
+interface StaticFeature {
+  lat: number;
+  lon: number;
+  label: string;
+  category: string;
+  icon: string;
+}
+
 const eventTypeColor = (type: string): string => {
   switch (type) {
     case "incident": return "#ff0044";
+    case "nuclear": return "#fbbf24";
     case "maritime": return "#ff9500";
     case "military": return "#ff4466";
+    case "cyber": return "#00ff88";
+    case "protest": return "#ff66ff";
+    case "energy": return "#ff8800";
     case "diplomatic": return "#00d4ff";
     default: return "#888888";
+  }
+};
+
+const staticFeatureColor = (category: string): string => {
+  switch (category) {
+    case "hvt": return "#ff0066";
+    case "nuclear": return "#fbbf24";
+    case "military": return "#4488ff";
+    case "energy": return "#ff9500";
+    case "missile": return "#ff4444";
+    case "proxy": return "#cc3366";
+    case "civil": return "#888888";
+    case "city": return "#556677";
+    case "landmark": return "#667788";
+    default: return "#888888";
+  }
+};
+
+const createStaticFeatureHtml = (f: StaticFeature): string => {
+  const color = staticFeatureColor(f.category);
+  switch (f.category) {
+    case "hvt":
+      return `<div style="width:10px;height:10px;position:relative;"><div style="position:absolute;inset:1px;border:1.5px solid ${color};border-radius:50%;"></div><div style="position:absolute;top:50%;left:0;right:0;height:1px;background:${color};transform:translateY(-50%);"></div><div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:${color};transform:translateX(-50%);"></div></div>`;
+    case "nuclear":
+      return `<div style="width:8px;height:8px;border-radius:50%;background:${color};box-shadow:0 0 6px ${color}80;border:1px solid ${color};"></div>`;
+    case "military":
+      return `<div style="width:6px;height:6px;background:${color};box-shadow:0 0 3px ${color}60;"></div>`;
+    case "energy":
+      return `<div style="width:7px;height:7px;transform:rotate(45deg);background:${color};box-shadow:0 0 4px ${color}60;"></div>`;
+    case "missile":
+      return `<div style="width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-bottom:7px solid ${color};filter:drop-shadow(0 0 3px ${color}60);"></div>`;
+    case "proxy":
+      return `<div style="width:6px;height:6px;border-radius:50%;background:${color};box-shadow:0 0 3px ${color}60;"></div>`;
+    default:
+      return `<div style="width:4px;height:4px;border-radius:50%;background:${color};opacity:0.6;"></div>`;
   }
 };
 
@@ -252,6 +299,9 @@ const ThreatMatrix = () => {
   const chokepointsLayerRef = useRef<L.LayerGroup | null>(null);
   const navalBasesLayerRef = useRef<L.LayerGroup | null>(null);
   const osintEventsLayerRef = useRef<L.LayerGroup | null>(null);
+  const staticCriticalLayerRef = useRef<L.LayerGroup | null>(null);
+  const staticSecondaryLayerRef = useRef<L.LayerGroup | null>(null);
+  const staticMinorLayerRef = useRef<L.LayerGroup | null>(null);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -313,11 +363,30 @@ const ThreatMatrix = () => {
     });
     navalBasesLayerRef.current = navalBasesLayer;
 
-    // Layer 5: OSINT Event Markers (filled by fetch)
+    // Layer 5: Static Features — 3 sub-layers with zoom-dependent visibility
+    const staticCriticalLayer = L.layerGroup().addTo(map); // nuclear, hvt, missile — always visible
+    const staticSecondaryLayer = L.layerGroup(); // military, energy, proxy — zoom >= 6
+    const staticMinorLayer = L.layerGroup(); // city, civil, landmark — zoom >= 7
+    staticCriticalLayerRef.current = staticCriticalLayer;
+    staticSecondaryLayerRef.current = staticSecondaryLayer;
+    staticMinorLayerRef.current = staticMinorLayer;
+
+    // Show/hide sub-layers based on zoom
+    const updateStaticVisibility = () => {
+      const z = map.getZoom();
+      if (z >= 6) { if (!map.hasLayer(staticSecondaryLayer)) map.addLayer(staticSecondaryLayer); }
+      else { if (map.hasLayer(staticSecondaryLayer)) map.removeLayer(staticSecondaryLayer); }
+      if (z >= 7) { if (!map.hasLayer(staticMinorLayer)) map.addLayer(staticMinorLayer); }
+      else { if (map.hasLayer(staticMinorLayer)) map.removeLayer(staticMinorLayer); }
+    };
+    map.on("zoomend", updateStaticVisibility);
+    updateStaticVisibility();
+
+    // Layer 6: OSINT Event Markers (filled by fetch)
     const osintEventsLayer = L.layerGroup().addTo(map);
     osintEventsLayerRef.current = osintEventsLayer;
 
-    // Layer 6: Patrol Aircraft (circle markers)
+    // Layer 7: Patrol Aircraft (circle markers)
     const vesselsLayer = L.layerGroup().addTo(map);
     vesselsLayerRef.current = vesselsLayer;
 
@@ -337,6 +406,9 @@ const ThreatMatrix = () => {
       shippingLanesLayerRef.current = null;
       chokepointsLayerRef.current = null;
       navalBasesLayerRef.current = null;
+      staticCriticalLayerRef.current = null;
+      staticSecondaryLayerRef.current = null;
+      staticMinorLayerRef.current = null;
       osintEventsLayerRef.current = null;
     };
   }, []);
@@ -439,7 +511,7 @@ const ThreatMatrix = () => {
       const apiBase = import.meta.env.VITE_API_BASE_URL || "https://meridian-api.dieter-meier82.workers.dev";
       const resp = await fetch(`${apiBase}/api/map-intel`);
       if (!resp.ok) return;
-      const data = await resp.json() as { events: MapIntelEvent[]; chokepoints: ChokepointData[] };
+      const data = await resp.json() as { events: MapIntelEvent[]; chokepoints: ChokepointData[]; staticFeatures?: StaticFeature[] };
 
       // Update chokepoint risk zones
       if (chokepointsLayerRef.current) {
@@ -486,6 +558,42 @@ const ThreatMatrix = () => {
             .addTo(osintEventsLayerRef.current!);
         });
         setOsintCount(events.length);
+      }
+
+      // Render static features into zoom-tiered layers
+      const features = data.staticFeatures || [];
+      if (features.length > 0) {
+        staticCriticalLayerRef.current?.clearLayers();
+        staticSecondaryLayerRef.current?.clearLayers();
+        staticMinorLayerRef.current?.clearLayers();
+
+        // Skip chokepoint category (already rendered as polygons) and duplicates with naval bases
+        const skipCoords = NAVAL_BASES.map(nb => ({ lat: nb.lat, lon: nb.lon }));
+
+        features.forEach((f) => {
+          if (f.category === "chokepoint") return;
+          const isDupe = skipCoords.some(s => Math.abs(s.lat - f.lat) < 0.05 && Math.abs(s.lon - f.lon) < 0.05);
+          if (f.category === "military" && isDupe) return;
+
+          const color = staticFeatureColor(f.category);
+          const html = createStaticFeatureHtml(f);
+          const size = ["hvt", "nuclear"].includes(f.category) ? 10 : ["missile", "energy"].includes(f.category) ? 8 : 6;
+          const marker = L.marker([f.lat, f.lon], {
+            icon: L.divIcon({ html, className: "", iconSize: [size, size], iconAnchor: [size / 2, size / 2] }),
+          }).bindTooltip(`<div style="font-family:'JetBrains Mono',monospace;font-size:9px;">
+            <div style="color:${color};font-weight:600">${f.label}</div>
+            <div style="color:#999;font-size:8px;text-transform:uppercase">${f.category}${f.icon !== f.category ? " — " + f.icon : ""}</div>
+          </div>`, { direction: "top", className: "leaflet-tooltip-tactical" });
+
+          // Route to correct zoom-tier layer
+          if (["nuclear", "hvt", "missile"].includes(f.category)) {
+            marker.addTo(staticCriticalLayerRef.current!);
+          } else if (["military", "energy", "proxy"].includes(f.category)) {
+            marker.addTo(staticSecondaryLayerRef.current!);
+          } else {
+            marker.addTo(staticMinorLayerRef.current!);
+          }
+        });
       }
     } catch (e) {
       console.error("Map intel fetch error:", e);
@@ -572,6 +680,27 @@ const ThreatMatrix = () => {
               <div className="h-1.5 w-3 rounded-sm" style={{ background: "#f59e0b", opacity: 0.3 }} />
               <span className="text-[7px] font-mono" style={{ color: "#f59e0b99" }}>CHOKE</span>
             </div>
+          </div>
+          {/* Row 3: Static features */}
+          <div className="flex items-center gap-2">
+            {[
+              { color: "#ff0066", label: "HVT", shape: "crosshair" },
+              { color: "#fbbf24", label: "NUKE", shape: "circle" },
+              { color: "#ff4444", label: "MSL", shape: "triangle" },
+              { color: "#4488ff", label: "MIL", shape: "square" },
+              { color: "#ff9500", label: "OIL", shape: "diamond" },
+              { color: "#cc3366", label: "PROXY", shape: "circle" },
+            ].map(item => (
+              <div key={item.label} className="flex items-center gap-0.5">
+                <div className="h-1.5 w-1.5" style={{
+                  background: item.color,
+                  borderRadius: item.shape === "circle" || item.shape === "crosshair" ? "50%" : "0",
+                  transform: item.shape === "diamond" ? "rotate(45deg)" : "none",
+                  opacity: 0.8,
+                }} />
+                <span className="text-[7px] font-mono" style={{ color: `${item.color}aa` }}>{item.label}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>

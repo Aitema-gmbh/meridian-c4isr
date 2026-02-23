@@ -145,18 +145,34 @@ function convertToJsonContentRequest(req: AIRequest): AIRequest {
 }
 
 export async function callClaudeJSON<T>(baseUrl: string, req: AIRequest): Promise<T> {
+  const fallbackModel = MODEL_FALLBACKS[req.model];
+
   // Try primary model
   const resp = await callClaude(baseUrl, req);
   if (resp.ok) {
-    return parseAIResponse<T>(await resp.json() as Record<string, unknown>);
+    try {
+      return parseAIResponse<T>(await resp.json() as Record<string, unknown>);
+    } catch (parseErr) {
+      // Parse error (model returned 200 but response wasn't parseable) — try fallback
+      if (fallbackModel) {
+        console.log(`[AI Parse Fallback] ${req.model} parse failed (${(parseErr as Error).message}), trying ${fallbackModel}`);
+        const isGemini = fallbackModel.startsWith("gemini");
+        const fallbackReq = isGemini
+          ? convertToJsonContentRequest({ ...req, model: fallbackModel })
+          : { ...req, model: fallbackModel };
+        const fallbackResp = await callClaude(baseUrl, fallbackReq);
+        if (fallbackResp.ok) {
+          return parseAIResponse<T>(await fallbackResp.json() as Record<string, unknown>);
+        }
+      }
+      throw parseErr; // No fallback or fallback also failed
+    }
   }
 
-  // Check if we should try fallback (429 rate limit or 5xx server error)
+  // HTTP error — try fallback (429 rate limit or 5xx server error)
   const status = resp.status;
-  const fallbackModel = MODEL_FALLBACKS[req.model];
   if ((status === 429 || status >= 500) && fallbackModel) {
     console.log(`[AI Fallback] ${req.model} returned ${status}, trying ${fallbackModel}`);
-    // For Gemini fallbacks: convert to JSON-in-content (Gemini tool calling is unreliable via proxy)
     const isGemini = fallbackModel.startsWith("gemini");
     const fallbackReq = isGemini
       ? convertToJsonContentRequest({ ...req, model: fallbackModel })

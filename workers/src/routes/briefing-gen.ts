@@ -76,7 +76,7 @@ export async function apiGenerateBriefing(req: Request, env: Env): Promise<Respo
 
     const briefing = await callClaudeJSON<BriefingOutput>(env.CLIPROXY_BASE_URL, {
       model: "gemini-2.5-flash",
-      max_tokens: 4096,
+      max_tokens: 8192,
       system: `You are a senior intelligence analyst generating a ${briefingType.toUpperCase()} BRIEFING for the IRAN/US CRISIS (Feb 2026). Write clear, actionable intelligence summaries for senior decision-makers. Structure: Executive Summary, Key Developments, Threat Changes, Outlook, Recommendations. Highlight what changed since the last briefing. ALWAYS call output_briefing.`,
       messages: [{
         role: "user",

@@ -2,11 +2,28 @@
  * Alle DB-schreibenden Agenten (osint, naval, pentagon, cyber, markets, reddit, wiki, macro, fires, pizza, ais, acled, telegram)
  */
 import { corsError, corsResponse } from "../lib/cors";
-import { callClaudeJSON } from "../lib/anthropic";
+import { callClaude, callClaudeJSON } from "../lib/anthropic";
 import { insertAgentReport, getLatestAgentReport, getStaleReport } from "../lib/db";
 import type { Env } from "../lib/anthropic";
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
+
+/** Clean a URL extracted from XML/RSS: decode &amp; entities and unwrap Bing News redirects */
+function cleanUrl(raw: string): string {
+  // 1. Decode XML entities
+  let url = raw.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+  // 2. Unwrap Bing News redirect URLs (bing.com/news/apiclick.aspx?...)
+  try {
+    if (url.includes("bing.com/news/apiclick")) {
+      const parsed = new URL(url);
+      const realUrl = parsed.searchParams.get("url");
+      if (realUrl) {
+        url = decodeURIComponent(realUrl);
+      }
+    }
+  } catch { /* malformed URL — return as-is */ }
+  return url.trim();
+}
 
 async function fetchGdelt(query: string, max: number): Promise<unknown[]> {
   try {
@@ -44,14 +61,17 @@ async function fetchBingNewsRss(query: string, max: number): Promise<unknown[]> 
     const url = `https://www.bing.com/news/search?q=${encodeURIComponent(query)}&format=rss`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
-    const resp = await fetch(url, { signal: controller.signal });
+    const resp = await fetch(url, {
+      signal: controller.signal,
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" },
+    });
     clearTimeout(timeout);
     if (!resp.ok) return [];
     const xml = await resp.text();
     const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
     return items.slice(0, max).map((item) => {
       const title = (item.match(/<title>([\s\S]*?)<\/title>/)?.[1] || "").replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
-      const link = item.match(/<link>([\s\S]*?)<\/link>/)?.[1] || "";
+      const link = cleanUrl(item.match(/<link>([\s\S]*?)<\/link>/)?.[1] || "");
       const pubDate = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/)?.[1] || "";
       const source = (item.match(/<source[^>]*>([\s\S]*?)<\/source>/)?.[1] || "").replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1");
       return { title, url: link, seendate: pubDate, domain: source || "bing-news", source: "bing-news-rss" };
@@ -65,14 +85,14 @@ async function fetchGoogleNewsRss(query: string, max: number): Promise<unknown[]
     const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en&gl=US&ceid=US:en`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
-    const resp = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "MeridianIntel/1.0" } });
+    const resp = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" } });
     clearTimeout(timeout);
     if (!resp.ok) return [];
     const xml = await resp.text();
     const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
     return items.slice(0, max).map((item) => {
       const title = (item.match(/<title>([\s\S]*?)<\/title>/)?.[1] || "").replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
-      const link = item.match(/<link>([\s\S]*?)<\/link>/)?.[1] || "";
+      const link = cleanUrl(item.match(/<link>([\s\S]*?)<\/link>/)?.[1] || "");
       const pubDate = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/)?.[1] || "";
       const source = (item.match(/<source[^>]*>([\s\S]*?)<\/source>/)?.[1] || "").replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1");
       return { title, url: link, seendate: pubDate, domain: source, source: "google-news-rss" };
@@ -200,9 +220,20 @@ export async function agentOsint(_req: Request, env: Env): Promise<Response> {
     try {
       interface OsintOutput { dominantCategory: string; sentimentScore: number; items: unknown[]; threatLevel: number; summary: string; }
       const analyzed = await callClaudeJSON<OsintOutput>(env.CLIPROXY_BASE_URL, {
-        model: "gemini-2.5-flash", max_tokens: 4096,
-        system: "You are an OSINT analyst. Analyze geopolitical news about the Iran/US crisis. Extract key intelligence signals. ALWAYS call output_osint_report.",
-        messages: [{ role: "user", content: `Analyze these OSINT articles: ${JSON.stringify(articles.slice(0, 15))}` }],
+        model: "gemini-2.5-flash", max_tokens: 8192,
+        system: `You are a senior OSINT analyst at a 24/7 intelligence fusion center monitoring the IRAN/US CRISIS (Feb 2026).
+
+CONTEXT: 2 US Carrier Strike Groups in Persian Gulf. Trump ultimatum to Iran on nuclear program. B-2 bombers at Diego Garcia. IRGC naval exercises near Strait of Hormuz. Iran enriching to 60%+ at Fordow.
+
+YOUR TASK: Analyze incoming articles for actionable intelligence:
+1. Distinguish genuine escalation signals from routine posturing and media speculation
+2. Identify specific actors, locations, weapons systems, timelines
+3. Calibrated threat level (0-100): 50+ means >25% chance of military action within 72h
+4. Focus on HARD SIGNALS: military movements, weapons tests, diplomatic ultimatums, sanctions, cyber ops
+5. Discount opinion pieces, unnamed sources, clickbait headlines
+
+ALWAYS call output_osint_report.`,
+        messages: [{ role: "user", content: `Analyze these ${articles.length} OSINT articles for intelligence signals. Focus on concrete military/diplomatic developments:\n\n${JSON.stringify(articles.slice(0, 15))}` }],
         tools: [{ name: "output_osint_report", description: "Output OSINT analysis", parameters: {
           type: "object", properties: {
             dominantCategory: { type: "string", enum: ["MARITIME", "CYBER", "DIPLOMATIC", "MILITARY", "ECONOMIC", "NUCLEAR"] },
@@ -330,7 +361,7 @@ function parseAtomEntries(xml: string): { title: string; url: string; updated: s
   const entries = xml.match(/<entry>[\s\S]*?<\/entry>/g) || [];
   return entries.map((entry) => ({
     title: (entry.match(/<title[^>]*>([\s\S]*?)<\/title>/)?.[1] || "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"),
-    url: entry.match(/<link[^>]*href="([^"]*)"[^>]*\/>/)?.[1] || "",
+    url: cleanUrl(entry.match(/<link[^>]*href="([^"]*)"[^>]*\/>/)?.[1] || ""),
     updated: entry.match(/<updated>([\s\S]*?)<\/updated>/)?.[1] || "",
   }));
 }
@@ -371,7 +402,7 @@ function parseRssItems(xml: string): { title: string; link: string; pubDate: str
   const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
   return items.map((item) => ({
     title: item.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/)?.[1] || item.match(/<title>([\s\S]*?)<\/title>/)?.[1] || "",
-    link: item.match(/<link>([\s\S]*?)<\/link>/)?.[1] || "",
+    link: cleanUrl(item.match(/<link>([\s\S]*?)<\/link>/)?.[1] || ""),
     pubDate: item.match(/<pubDate>([\s\S]*?)<\/pubDate>/)?.[1] || "",
     description: item.match(/<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>/)?.[1] || "",
   }));
@@ -817,13 +848,13 @@ interface ThinkTankOutput {
 
 export async function agentThinkTank(_req: Request, env: Env): Promise<Response> {
   try {
-    const cutoff = new Date(Date.now() - 120 * 60 * 1000).toISOString();
+    const cutoff = new Date(Date.now() - 180 * 60 * 1000).toISOString(); // 3h window
 
-    // Gather all agent reports
-    const agentReports: Record<string, { data: Record<string, unknown>; summary: string; threat_level: number }> = {};
+    // Gather agent reports — trim summaries to keep context manageable
+    const agentReports: Record<string, { summary: string; threat_level: number }> = {};
     for (const agent of THINKTANK_AGENTS) {
       const row = await getLatestAgentReport(env.DB, agent, cutoff);
-      if (row) agentReports[agent] = row as { data: Record<string, unknown>; summary: string; threat_level: number };
+      if (row) agentReports[agent] = { summary: (row.summary || "").slice(0, 200), threat_level: row.threat_level };
     }
 
     const activeAgents = Object.keys(agentReports);
@@ -837,76 +868,144 @@ export async function agentThinkTank(_req: Request, env: Env): Promise<Response>
        FROM threat_assessments ORDER BY created_at DESC LIMIT 1`
     ).first<Record<string, unknown>>();
 
-    // Build context
+    // Build compact context (trimmed summaries)
     const agentContext = activeAgents.map(a =>
-      `${a.toUpperCase()}: ${agentReports[a].summary} | Threat: ${agentReports[a].threat_level}/100`
+      `${a.toUpperCase()} [${agentReports[a].threat_level}]: ${agentReports[a].summary}`
     ).join("\n");
 
     const assessmentContext = assessment
-      ? `\nCURRENT ASSESSMENT: TI=${assessment.tension_index}, WATCHCON=${assessment.watchcon}, Hormuz=${assessment.hormuz_closure}%, Cyber=${assessment.cyber_attack}%, Proxy=${assessment.proxy_escalation}%, Direct=${assessment.direct_confrontation}%\nNarrative: ${assessment.analysis_narrative}`
-      : "\nNo current threat assessment available.";
+      ? `\nASSESSMENT: TI=${assessment.tension_index} WATCHCON=${assessment.watchcon} Hormuz=${assessment.hormuz_closure}% Cyber=${assessment.cyber_attack}% Proxy=${assessment.proxy_escalation}% Direct=${assessment.direct_confrontation}%\n${(assessment.analysis_narrative as string || "").slice(0, 400)}`
+      : "";
 
-    const result = await callClaudeJSON<ThinkTankOutput>(env.CLIPROXY_BASE_URL, {
-      model: "gemini-2.5-flash",
-      max_tokens: 4096,
-      system: `You are the DEVIL'S ADVOCATE analyst monitoring the IRAN/US CRISIS (Feb 2026). Challenge the prevailing assessment. Find MISSING signals, ALTERNATIVE SCENARIOS, BLIND SPOTS, RED FLAGS, and HISTORICAL ANALOGIES. Dissent score 0-100 (0=sound, 50=equally plausible alternatives, 100=intelligence failure risk). ALWAYS call output_think_tank_analysis.`,
+    // Use JSON-in-content approach (more reliable than tool calling for Gemini)
+    const jsonSchema = `{
+  "dissentScore": number (0-100),
+  "overallAssessment": "string — what the mainstream gets wrong",
+  "alternativeScenarios": [{"scenario": "string", "probability": number, "reasoning": "string"}],
+  "blindSpots": ["string — what we're not seeing"],
+  "redFlags": ["string — signals being dismissed"],
+  "historicalAnalogies": [{"event": "string", "year": number, "relevance": "string"}],
+  "contraryIndicators": ["string — data contradicting consensus"],
+  "confidenceInDissent": number (0-100)
+}`;
+
+    const systemPrompt = `You are the RED TEAM / DEVIL'S ADVOCATE senior analyst for the IRAN/US CRISIS (Feb 2026).
+
+YOUR MANDATE: Challenge groupthink. The intelligence community's greatest failures (9/11, Iraq WMD, Arab Spring, Crimea 2014) came from consensus bias and mirror-imaging. Your job is to prevent that.
+
+ANALYTICAL FRAMEWORK:
+1. ALTERNATIVE SCENARIOS: What if the consensus is wrong? Consider:
+   - Is Iran's nuclear buildup a bargaining chip, not a weapon sprint?
+   - Could US military deployments be for deterrence/evacuation, not attack?
+   - Are IRGC provocations authorized from the top, or rogue elements?
+   - Is there a back-channel de-escalation happening that public signals miss?
+
+2. BLIND SPOTS: What are we NOT monitoring that could matter?
+   - Chinese/Russian diplomatic interventions
+   - Internal Iranian political dynamics (IRGC vs Rouhani faction vs Supreme Leader)
+   - Gulf state (UAE/Qatar/Oman) mediation efforts
+   - Economic pressures that might force either side's hand
+   - Cyber operations that haven't been attributed yet
+
+3. RED FLAGS: Signals being dismissed as noise that could be significant
+   - Unusual financial flows, asset movements, evacuation preparations
+   - Military communication pattern changes
+   - Diplomatic staff movements/reductions
+
+4. HISTORICAL ANALOGIES: Not just surface similarities — analyze the MECHANISM of escalation
+   - Soleimani 2020: accidental escalation through tit-for-tat
+   - Tanker War 1987-88: gradual escalation of maritime incidents
+   - July Crisis 1914: alliance commitments forcing escalation
+   - Cuban Missile Crisis: back-channel resolution despite public posturing
+
+CALIBRATION: Your dissentScore (0-100) should reflect HOW WRONG you think the consensus is. 30 = minor adjustments needed. 60 = significant blind spots. 80+ = the consensus narrative is fundamentally flawed.
+
+Respond with ONLY a JSON object, no markdown fences. Schema:
+${jsonSchema}
+
+Be specific, not generic. Name actual actors, cite specific signals, propose concrete alternative interpretations.`;
+
+    const resp = await callClaude(env.CLIPROXY_BASE_URL, {
+      model: "gemini-3.1-pro-high",
+      max_tokens: 8192,
+      system: systemPrompt,
       messages: [{
         role: "user",
-        content: `MULTI-AGENT INTELLIGENCE DIGEST:\n\n${agentContext}${assessmentContext}\n\nProvide your contrarian analysis. Challenge everything. What are we missing?`,
+        content: `MULTI-AGENT DIGEST (${activeAgents.length} agents):\n${agentContext}${assessmentContext}\n\nContrarian analysis — what are we missing? Respond with JSON only.`,
       }],
-      tools: [{
-        name: "output_think_tank_analysis",
-        description: "Output contrarian/red-team analysis",
-        parameters: {
-          type: "object",
-          properties: {
-            dissentScore: { type: "number", description: "0-100: how strongly you disagree with the current assessment" },
-            overallAssessment: { type: "string", description: "Your contrarian summary — what the mainstream assessment gets wrong" },
-            alternativeScenarios: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  scenario: { type: "string" },
-                  probability: { type: "number", description: "0-100" },
-                  reasoning: { type: "string" },
-                },
-                required: ["scenario", "probability", "reasoning"],
-              },
-              description: "2-4 alternative scenarios the main assessment underweights",
-            },
-            blindSpots: { type: "array", items: { type: "string" }, description: "What we're NOT seeing or collecting" },
-            redFlags: { type: "array", items: { type: "string" }, description: "Signals others are dismissing" },
-            historicalAnalogies: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  event: { type: "string" },
-                  year: { type: "number" },
-                  relevance: { type: "string" },
-                },
-                required: ["event", "year", "relevance"],
-              },
-              description: "Historical parallels that suggest different outcomes",
-            },
-            contraryIndicators: { type: "array", items: { type: "string" }, description: "Data points that contradict the consensus" },
-            confidenceInDissent: { type: "number", description: "0-100: how confident you are in your contrarian view" },
-          },
-          required: ["dissentScore", "overallAssessment", "alternativeScenarios", "blindSpots", "redFlags", "historicalAnalogies", "contraryIndicators", "confidenceInDissent"],
-        },
-      }],
-      tool_choice: { type: "function", function: { name: "output_think_tank_analysis" } },
     });
+
+    if (!resp.ok) {
+      // Fallback to gemini-2.5-flash
+      console.log(`[thinktank] Primary model failed (${resp.status}), trying gemini-2.5-flash`);
+      const fallbackResp = await callClaude(env.CLIPROXY_BASE_URL, {
+        model: "gemini-2.5-flash",
+        max_tokens: 8192,
+        system: systemPrompt,
+        messages: [{
+          role: "user",
+          content: `MULTI-AGENT DIGEST (${activeAgents.length} agents):\n${agentContext}${assessmentContext}\n\nContrarian analysis — what are we missing? Respond with JSON only.`,
+        }],
+      });
+      if (!fallbackResp.ok) {
+        const errText = await fallbackResp.text();
+        throw new Error(`AI API error ${fallbackResp.status}: ${errText.slice(0, 200)}`);
+      }
+      var aiData = await fallbackResp.json() as Record<string, unknown>;
+    } else {
+      var aiData = await resp.json() as Record<string, unknown>;
+    }
+
+    // Parse JSON from content (Gemini returns analysis as text)
+    const choices = aiData.choices as Array<{ message: { content?: string; tool_calls?: Array<{ function: { arguments: string } }> } }>;
+    const content = choices?.[0]?.message?.content || "";
+    const toolCall = choices?.[0]?.message?.tool_calls?.[0];
+
+    let result: ThinkTankOutput;
+
+    // Try tool_call first (in case model used it)
+    if (toolCall?.function?.arguments) {
+      try {
+        const parsed = JSON.parse(toolCall.function.arguments);
+        if (parsed.dissentScore !== undefined || parsed.dissent_score !== undefined) {
+          result = parsed as ThinkTankOutput;
+        } else {
+          throw new Error("incomplete tool_call");
+        }
+      } catch {
+        // Fall through to content parsing
+        result = null as unknown as ThinkTankOutput;
+      }
+    }
+
+    // Parse JSON from content
+    if (!result) {
+      // Strip markdown fences if present
+      const cleaned = content.replace(/```json\s*/g, "").replace(/```\s*/g, "");
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error(`No JSON in response: ${content.slice(0, 200)}`);
+      const parsed = JSON.parse(jsonMatch[0]);
+      // Normalize snake_case → camelCase
+      result = {
+        dissentScore: parsed.dissentScore ?? parsed.dissent_score ?? 50,
+        overallAssessment: parsed.overallAssessment ?? parsed.overall_assessment ?? "Analysis unavailable",
+        alternativeScenarios: parsed.alternativeScenarios ?? parsed.alternative_scenarios ?? [],
+        blindSpots: parsed.blindSpots ?? parsed.blind_spots ?? [],
+        redFlags: parsed.redFlags ?? parsed.red_flags ?? [],
+        historicalAnalogies: parsed.historicalAnalogies ?? parsed.historical_analogies ?? [],
+        contraryIndicators: parsed.contraryIndicators ?? parsed.contrary_indicators ?? [],
+        confidenceInDissent: parsed.confidenceInDissent ?? parsed.confidence_in_dissent ?? 50,
+      } as ThinkTankOutput;
+    }
 
     // Write to DB
     await insertAgentReport(env.DB, {
       agent_name: "thinktank",
       report_type: "cycle",
       data: result as unknown as Record<string, unknown>,
-      summary: result.overallAssessment,
-      threat_level: result.dissentScore,
-      confidence: result.confidenceInDissent >= 60 ? "HIGH" : result.confidenceInDissent >= 30 ? "MEDIUM" : "LOW",
+      summary: (result.overallAssessment || "").slice(0, 500),
+      threat_level: Math.min(100, Math.max(0, Number(result.dissentScore) || 50)),
+      confidence: (result.confidenceInDissent || 50) >= 60 ? "HIGH" : (result.confidenceInDissent || 50) >= 30 ? "MEDIUM" : "LOW",
       items_count: (result.alternativeScenarios?.length || 0) + (result.blindSpots?.length || 0) + (result.redFlags?.length || 0),
     });
 
@@ -919,6 +1018,7 @@ export async function agentThinkTank(_req: Request, env: Env): Promise<Response>
       redFlags: result.redFlags?.length || 0,
     });
   } catch (e) {
+    console.error("[thinktank] Error:", e);
     return corsError(e instanceof Error ? e.message : "Unknown");
   }
 }
@@ -1464,58 +1564,74 @@ interface TelegramPost {
   relevanceScore: number;
 }
 
-/** Fetch Telegram channel posts via RSSHub public instances (RSS bridge).
- *  Falls back across multiple RSSHub mirrors, then to Bing News RSS. */
-const RSSHUB_INSTANCES = [
-  "https://rsshub.app",
-  "https://rsshub.rssforever.com",
-  "https://rsshub-instance.zeabur.app",
-];
+/** Fetch Telegram channel posts via direct t.me/s/ HTML preview.
+ *  Falls back to Google News RSS, then Bing News RSS. */
+const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
-async function fetchTelegramViaRssHub(channel: string): Promise<{ text: string; date: string; views: string }[]> {
-  for (const instance of RSSHUB_INSTANCES) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      const resp = await fetch(`${instance}/telegram/channel/${channel}`, {
-        signal: controller.signal,
-        headers: { "User-Agent": "MeridianIntel/1.0" },
-      });
-      clearTimeout(timeout);
-      if (!resp.ok) continue;
-      const xml = await resp.text();
-      const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
-      if (items.length === 0) continue;
+async function fetchTelegramDirect(channel: string): Promise<{ text: string; date: string; views: string }[]> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    const resp = await fetch(`https://t.me/s/${channel}`, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": BROWSER_UA,
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+    });
+    clearTimeout(timeout);
+    if (!resp.ok) return [];
+    const html = await resp.text();
 
+    // Parse message bubbles from t.me/s/ HTML
+    const msgBlocks = html.match(/<div class="tgme_widget_message_wrap[\s\S]*?<\/div>\s*<\/div>\s*<\/div>\s*<\/div>/g) || [];
+    if (msgBlocks.length === 0) {
+      // Alternative regex for simpler structure
+      const altBlocks = html.match(/<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/g) || [];
       const posts: { text: string; date: string; views: string }[] = [];
-      for (const item of items.slice(0, 20)) {
-        const title = (item.match(/<title>([\s\S]*?)<\/title>/)?.[1] || "")
-          .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
-        const desc = (item.match(/<description>([\s\S]*?)<\/description>/)?.[1] || "")
-          .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim();
-        const pubDate = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/)?.[1] || "";
-
-        const text = (desc || title).trim();
+      for (const block of altBlocks.slice(-30)) {
+        const text = block.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n))).replace(/\s+/g, " ").trim();
         if (text.length > 20) {
-          posts.push({ text: text.slice(0, 500), date: pubDate, views: "0" });
+          posts.push({ text: text.slice(0, 500), date: new Date().toISOString(), views: "0" });
         }
       }
-      if (posts.length > 0) return posts;
-    } catch { /* try next instance */ }
-  }
-  return [];
+      return posts;
+    }
+
+    const posts: { text: string; date: string; views: string }[] = [];
+    for (const block of msgBlocks.slice(-30)) {
+      const textMatch = block.match(/<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/);
+      const dateMatch = block.match(/datetime="([^"]+)"/);
+      const viewsMatch = block.match(/<span class="tgme_widget_message_views">([\s\S]*?)<\/span>/);
+
+      const text = (textMatch?.[1] || "")
+        .replace(/<br\s*\/?>/g, " ").replace(/<[^>]+>/g, " ")
+        .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+        .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)))
+        .replace(/\s+/g, " ").trim();
+      const date = dateMatch?.[1] || new Date().toISOString();
+      const views = (viewsMatch?.[1] || "0").trim();
+
+      if (text.length > 20) {
+        posts.push({ text: text.slice(0, 500), date, views });
+      }
+    }
+    return posts;
+  } catch { return []; }
 }
 
-/** Fallback: search Bing News RSS for Telegram channel content + keywords */
-async function fetchTelegramViaBingNews(channel: string, channelLabel: string): Promise<{ text: string; date: string; views: string }[]> {
-  // Search for recent news mentioning this channel or its label + Iran crisis keywords
-  const queries = [
-    `"${channel}" telegram iran OR nuclear OR missile OR military`,
-    `${channelLabel} telegram middle east iran`,
-  ];
+/** Fallback: search Google News RSS + Bing News RSS for channel content + Iran keywords */
+async function fetchTelegramViaNewsSearch(channel: string, channelLabel: string): Promise<{ text: string; date: string; views: string }[]> {
   const posts: { text: string; date: string; views: string }[] = [];
-  for (const q of queries) {
-    const items = await fetchBingNewsRss(q, 10) as { title?: string; url?: string; seendate?: string }[];
+
+  // Try Google News first (more reliable)
+  const googleQueries = [
+    `"${channelLabel}" iran OR IRGC OR nuclear OR military`,
+    `telegram "${channel}" iran crisis middle east`,
+  ];
+  for (const q of googleQueries) {
+    const items = await fetchGoogleNewsRss(q, 8) as { title?: string; url?: string; seendate?: string }[];
     for (const item of items) {
       const text = (item.title || "").trim();
       if (text.length > 20 && !posts.some((p) => p.text === text)) {
@@ -1524,19 +1640,38 @@ async function fetchTelegramViaBingNews(channel: string, channelLabel: string): 
     }
     if (posts.length >= 5) break;
   }
+
+  // Then try Bing News
+  if (posts.length < 3) {
+    const bingQueries = [
+      `"${channel}" telegram iran nuclear missile military`,
+      `${channelLabel} telegram middle east iran`,
+    ];
+    for (const q of bingQueries) {
+      const items = await fetchBingNewsRss(q, 8) as { title?: string; url?: string; seendate?: string }[];
+      for (const item of items) {
+        const text = (item.title || "").trim();
+        if (text.length > 20 && !posts.some((p) => p.text === text)) {
+          posts.push({ text: text.slice(0, 500), date: item.seendate || "", views: "0" });
+        }
+      }
+      if (posts.length >= 5) break;
+    }
+  }
+
   return posts;
 }
 
-/** Combined fetcher: RSSHub primary, Bing News fallback */
+/** Combined fetcher: direct t.me/s/ primary, news search fallback */
 async function fetchTelegramChannel(channel: string, channelLabel: string): Promise<{ text: string; date: string; views: string }[]> {
-  const rssPosts = await fetchTelegramViaRssHub(channel);
-  if (rssPosts.length > 0) return rssPosts;
-  return fetchTelegramViaBingNews(channel, channelLabel);
+  const directPosts = await fetchTelegramDirect(channel);
+  if (directPosts.length > 0) return directPosts;
+  return fetchTelegramViaNewsSearch(channel, channelLabel);
 }
 
 export async function agentTelegram(_req: Request, env: Env): Promise<Response> {
   try {
-    // 1. Fetch all channels via RSSHub / Bing News fallback (no direct t.me access from CF Workers)
+    // 1. Fetch all channels via direct t.me/s/ + Google/Bing News fallback
     const channelResults = await Promise.allSettled(
       TELEGRAM_CHANNELS.map((ch) => fetchTelegramChannel(ch.name, ch.label))
     );
@@ -1563,14 +1698,17 @@ export async function agentTelegram(_req: Request, env: Env): Promise<Response> 
       });
     });
 
-    // If no posts from any channel, try a broad keyword Bing News RSS sweep as last resort
+    // If no posts from any channel, try a broad keyword news sweep as last resort
     if (allPosts.length === 0) {
       const broadQueries = [
-        "telegram iran nuclear missile IRGC crisis",
-        "telegram channel middle east houthi hezbollah military",
+        "iran nuclear missile IRGC crisis telegram",
+        "middle east houthi hezbollah military Iran",
+        "IRGC iran strait hormuz military",
       ];
       for (const q of broadQueries) {
-        const items = await fetchBingNewsRss(q, 15) as { title?: string; url?: string; seendate?: string }[];
+        // Try Google News first, then Bing
+        let items = await fetchGoogleNewsRss(q, 15) as { title?: string; url?: string; seendate?: string }[];
+        if (items.length === 0) items = await fetchBingNewsRss(q, 15) as { title?: string; url?: string; seendate?: string }[];
         for (const item of items) {
           const text = (item.title || "").trim();
           const lower = text.toLowerCase();
@@ -1745,6 +1883,362 @@ export async function agentMetaculus(_req: Request, env: Env): Promise<Response>
     });
 
     return corsResponse({ success: true, questionsFound: allQuestions.length, divergences: divergences.length });
+  } catch (e) {
+    return corsError(e instanceof Error ? e.message : "Unknown");
+  }
+}
+
+// ─── Agent: Weather (Gulf Region Military Weather) ──────────────────────────
+
+interface WeatherLocation {
+  name: string;
+  lat: number;
+  lon: number;
+  type: "strait" | "port" | "base" | "sea";
+}
+
+const WEATHER_LOCATIONS: WeatherLocation[] = [
+  { name: "Strait of Hormuz", lat: 26.56, lon: 56.27, type: "strait" },
+  { name: "Bab el-Mandeb", lat: 12.58, lon: 43.33, type: "strait" },
+  { name: "Suez Canal", lat: 30.46, lon: 32.35, type: "strait" },
+  { name: "Bandar Abbas (Iran)", lat: 27.19, lon: 56.27, type: "port" },
+  { name: "Jebel Ali (UAE)", lat: 25.05, lon: 55.06, type: "port" },
+  { name: "Al Udeid (Qatar)", lat: 25.12, lon: 51.32, type: "base" },
+  { name: "Bahrain (NSA)", lat: 26.22, lon: 50.65, type: "base" },
+  { name: "Central Persian Gulf", lat: 26.50, lon: 52.00, type: "sea" },
+  { name: "Gulf of Oman", lat: 25.00, lon: 58.50, type: "sea" },
+  { name: "Red Sea (Houthi Zone)", lat: 15.50, lon: 41.50, type: "sea" },
+];
+
+interface LocationWeather {
+  name: string;
+  type: string;
+  temp_c: number;
+  wind_speed_kmh: number;
+  wind_gusts_kmh: number;
+  wind_direction: number;
+  visibility_km: number;
+  wave_height_m: number | null;
+  precipitation_mm: number;
+  weather_code: number;
+  is_day: boolean;
+  alerts: string[];
+}
+
+function weatherCodeToDesc(code: number): string {
+  const map: Record<number, string> = {
+    0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
+    45: "Fog", 48: "Depositing rime fog",
+    51: "Light drizzle", 53: "Moderate drizzle", 55: "Dense drizzle",
+    61: "Slight rain", 63: "Moderate rain", 65: "Heavy rain",
+    71: "Slight snow", 73: "Moderate snow", 75: "Heavy snow",
+    77: "Snow grains", 80: "Slight rain showers", 81: "Moderate rain showers", 82: "Violent rain showers",
+    85: "Slight snow showers", 86: "Heavy snow showers",
+    95: "Thunderstorm", 96: "Thunderstorm with slight hail", 99: "Thunderstorm with heavy hail",
+  };
+  return map[code] || `Code ${code}`;
+}
+
+export async function agentWeather(_req: Request, env: Env): Promise<Response> {
+  try {
+    const results: LocationWeather[] = [];
+
+    // Fetch weather for all locations in parallel (Open-Meteo is free, no key needed)
+    const fetches = WEATHER_LOCATIONS.map(async (loc) => {
+      try {
+        const params = new URLSearchParams({
+          latitude: String(loc.lat),
+          longitude: String(loc.lon),
+          current: "temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,is_day",
+          forecast_days: "1",
+          timezone: "UTC",
+        });
+
+        // Marine weather for sea/strait locations
+        let marineData: { wave_height?: number } = {};
+        if (loc.type === "sea" || loc.type === "strait") {
+          try {
+            const marineResp = await fetch(`https://marine-api.open-meteo.com/v1/marine?latitude=${loc.lat}&longitude=${loc.lon}&current=wave_height&timezone=UTC`, {
+              signal: AbortSignal.timeout(5000),
+            });
+            if (marineResp.ok) {
+              const mj = await marineResp.json() as { current?: { wave_height?: number } };
+              marineData = { wave_height: mj.current?.wave_height };
+            }
+          } catch { /* marine data is optional */ }
+        }
+
+        const resp = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`, {
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!resp.ok) return null;
+        const data = await resp.json() as {
+          current?: {
+            temperature_2m?: number;
+            wind_speed_10m?: number;
+            wind_direction_10m?: number;
+            wind_gusts_10m?: number;
+            precipitation?: number;
+            weather_code?: number;
+            is_day?: number;
+            relative_humidity_2m?: number;
+          };
+        };
+
+        const c = data.current;
+        if (!c) return null;
+
+        const windSpeed = c.wind_speed_10m || 0;
+        const windGusts = c.wind_gusts_10m || 0;
+        const visibility = c.relative_humidity_2m && c.relative_humidity_2m > 90 ? 2 : c.relative_humidity_2m && c.relative_humidity_2m > 70 ? 8 : 15;
+        const waveHeight = marineData.wave_height ?? null;
+        const weatherCode = c.weather_code || 0;
+        const precip = c.precipitation || 0;
+
+        // Generate military-relevant weather alerts
+        const alerts: string[] = [];
+        if (windSpeed > 50) alerts.push("STORM WARNING: High winds >50 km/h — hazardous for flight ops & small craft");
+        else if (windSpeed > 35) alerts.push("WIND ADVISORY: Strong winds >35 km/h — affects helicopter ops");
+        if (windGusts > 70) alerts.push("GUST WARNING: Extreme gusts >70 km/h");
+        if (visibility < 3) alerts.push("LOW VISIBILITY: <3 km — affects maritime surveillance & drone ops");
+        if (waveHeight && waveHeight > 3) alerts.push(`HIGH SEAS: ${waveHeight}m waves — hazardous for small boat operations`);
+        else if (waveHeight && waveHeight > 2) alerts.push(`ROUGH SEAS: ${waveHeight}m waves — small craft advisory`);
+        if (precip > 10) alerts.push("HEAVY PRECIPITATION: Affects ISR sensor performance");
+        if (weatherCode >= 95) alerts.push("THUNDERSTORM: Hazardous for all flight operations");
+        if (c.temperature_2m && c.temperature_2m > 48) alerts.push("EXTREME HEAT: >48°C — personnel safety risk");
+        if (weatherCode >= 45 && weatherCode <= 48) alerts.push("FOG: Severely reduced visibility — affects maritime navigation");
+
+        return {
+          name: loc.name,
+          type: loc.type,
+          temp_c: c.temperature_2m || 0,
+          wind_speed_kmh: windSpeed,
+          wind_gusts_kmh: windGusts,
+          wind_direction: c.wind_direction_10m || 0,
+          visibility_km: visibility,
+          wave_height_m: waveHeight,
+          precipitation_mm: precip,
+          weather_code: weatherCode,
+          is_day: c.is_day === 1,
+          alerts,
+        } as LocationWeather;
+      } catch {
+        return null;
+      }
+    });
+
+    const fetchResults = await Promise.allSettled(fetches);
+    for (const r of fetchResults) {
+      if (r.status === "fulfilled" && r.value) results.push(r.value);
+    }
+
+    // Compute weatherRiskIndex (0-100) based on operational impact
+    let riskIndex = 0;
+    const allAlerts: string[] = [];
+    for (const loc of results) {
+      if (loc.alerts.length > 0) {
+        allAlerts.push(...loc.alerts.map(a => `${loc.name}: ${a}`));
+        // Straits and seas have higher weight
+        const weight = (loc.type === "strait") ? 3 : (loc.type === "sea") ? 2 : 1;
+        riskIndex += loc.alerts.length * 8 * weight;
+      }
+      // High winds at any location add risk
+      if (loc.wind_speed_kmh > 30) riskIndex += 5;
+      // Low visibility adds risk
+      if (loc.visibility_km < 5) riskIndex += 8;
+    }
+    riskIndex = Math.min(100, riskIndex);
+
+    // Determine operational weather conditions
+    const conditions: string[] = [];
+    const hormuz = results.find(r => r.name.includes("Hormuz"));
+    const babMandeb = results.find(r => r.name.includes("Mandeb"));
+    if (hormuz) {
+      conditions.push(`Hormuz: ${weatherCodeToDesc(hormuz.weather_code)}, ${hormuz.temp_c}°C, Wind ${hormuz.wind_speed_kmh}km/h${hormuz.wave_height_m ? `, Waves ${hormuz.wave_height_m}m` : ""}`);
+    }
+    if (babMandeb) {
+      conditions.push(`Bab el-Mandeb: ${weatherCodeToDesc(babMandeb.weather_code)}, ${babMandeb.temp_c}°C, Wind ${babMandeb.wind_speed_kmh}km/h${babMandeb.wave_height_m ? `, Waves ${babMandeb.wave_height_m}m` : ""}`);
+    }
+
+    const summary = `Weather: ${results.length} locations monitored. Risk Index: ${riskIndex}/100. ${allAlerts.length} active alerts. ${conditions.join(". ")}`;
+
+    await insertAgentReport(env.DB, {
+      agent_name: "weather",
+      report_type: "cycle",
+      data: {
+        locations: results,
+        alerts: allAlerts,
+        weatherRiskIndex: riskIndex,
+        conditions,
+        locationCount: results.length,
+      },
+      summary,
+      threat_level: riskIndex,
+      confidence: results.length >= 8 ? "HIGH" : results.length >= 5 ? "MEDIUM" : "LOW",
+      items_count: results.length,
+    });
+
+    return corsResponse({ success: true, locations: results.length, alerts: allAlerts.length, riskIndex });
+  } catch (e) {
+    return corsError(e instanceof Error ? e.message : "Unknown");
+  }
+}
+
+// ─── Agent: ISW (Institute for the Study of War) ──────────────────────────
+
+const ISW_MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+
+interface ISWReport {
+  title: string;
+  url: string;
+  date: string;
+  keyTakeaway: string;
+  source: string;
+}
+
+async function fetchISWUpdate(date: Date): Promise<ISWReport | null> {
+  const month = ISW_MONTHS[date.getUTCMonth()];
+  const day = date.getUTCDate();
+  const year = date.getUTCFullYear();
+  const url = `https://understandingwar.org/research/middle-east/iran-update-${month}-${day}-${year}/`;
+
+  try {
+    const resp = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; AcademicResearchBot/1.0; +https://meridian-intel.org)" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!resp.ok) return null;
+    const html = await resp.text();
+
+    // Extract key takeaway from meta description or og:description
+    let keyTakeaway = "";
+    const ogDesc = html.match(/<meta\s+property="og:description"\s+content="([^"]+)"/i);
+    if (ogDesc) keyTakeaway = ogDesc[1];
+    if (!keyTakeaway) {
+      const metaDesc = html.match(/<meta\s+name="description"\s+content="([^"]+)"/i);
+      if (metaDesc) keyTakeaway = metaDesc[1];
+    }
+
+    // Extract title
+    let title = `Iran Update, ${month.charAt(0).toUpperCase() + month.slice(1)} ${day}, ${year}`;
+    const ogTitle = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
+    if (ogTitle) title = ogTitle[1];
+
+    return { title, url, date: date.toISOString().split("T")[0], keyTakeaway, source: "ISW" };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchCriticalThreatsUpdate(date: Date): Promise<ISWReport | null> {
+  // CriticalThreats.org (AEI's partner to ISW) also publishes Iran Updates
+  const month = ISW_MONTHS[date.getUTCMonth()];
+  const day = date.getUTCDate();
+  const year = date.getUTCFullYear();
+  const url = `https://www.criticalthreats.org/analysis/iran-update-${month}-${day}-${year}`;
+
+  try {
+    const resp = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; AcademicResearchBot/1.0; +https://meridian-intel.org)" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!resp.ok) return null;
+    const html = await resp.text();
+
+    let keyTakeaway = "";
+    const ogDesc = html.match(/<meta\s+property="og:description"\s+content="([^"]+)"/i);
+    if (ogDesc) keyTakeaway = ogDesc[1];
+
+    let title = `Iran Update, ${month.charAt(0).toUpperCase() + month.slice(1)} ${day}, ${year}`;
+    const ogTitle = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
+    if (ogTitle) title = ogTitle[1];
+
+    return { title, url, date: date.toISOString().split("T")[0], keyTakeaway, source: "CriticalThreats" };
+  } catch {
+    return null;
+  }
+}
+
+export async function agentIsw(_req: Request, env: Env): Promise<Response> {
+  try {
+    const reports: ISWReport[] = [];
+    const now = new Date();
+
+    // Fetch last 7 days of ISW + CriticalThreats Iran Updates (weekends/gaps = no publish)
+    const fetches: Promise<ISWReport | null>[] = [];
+    for (let daysAgo = 0; daysAgo < 7; daysAgo++) {
+      const date = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
+      fetches.push(fetchISWUpdate(date));
+      fetches.push(fetchCriticalThreatsUpdate(date));
+    }
+
+    const results = await Promise.allSettled(fetches);
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value) reports.push(r.value);
+    }
+
+    // Also fetch GDELT articles — Iran-specific ISW/CTP analysis
+    const gdeltArticles = await fetchGdelt('"Iran Update" ("understandingwar.org" OR "criticalthreats.org" OR "ISW")', 10);
+    const gdeltItems = (gdeltArticles as { title?: string; url?: string; seendate?: string }[])
+      .filter(a => a.title && a.title.toLowerCase().includes("iran"))
+      .slice(0, 5)
+      .map(a => ({
+        title: a.title || "",
+        url: a.url || "",
+        date: a.seendate?.slice(0, 10) || now.toISOString().split("T")[0],
+        keyTakeaway: a.title || "",
+        source: "GDELT-ISW",
+      }));
+
+    reports.push(...gdeltItems);
+
+    // Extract key intelligence themes from all reports
+    const allTakeaways = reports.map(r => r.keyTakeaway).filter(Boolean);
+    const themes: string[] = [];
+    const themeKeywords: Record<string, string[]> = {
+      "NUCLEAR_TALKS": ["nuclear", "talks", "negotiations", "deal", "enrichment", "JCPOA", "Oman"],
+      "MILITARY_BUILDUP": ["military", "forces", "deploy", "carrier", "strike group", "B-2", "exercise"],
+      "PROXY_ACTIVITY": ["Houthi", "Hezbollah", "militia", "PMF", "proxy", "attack", "rocket"],
+      "CYBER_OPS": ["cyber", "hack", "malware", "digital", "infrastructure"],
+      "DIPLOMATIC": ["diplomatic", "talks", "sanctions", "UN", "IAEA", "envoy"],
+      "INTERNAL_IRAN": ["protest", "IRGC", "Khamenei", "regime", "economy", "unrest"],
+      "SYRIA": ["Syria", "SDF", "Kurdish", "Damascus", "Aleppo", "ISIS"],
+      "IRAQ": ["Iraq", "Baghdad", "Sudani", "Maliki", "PMF"],
+    };
+
+    const combinedText = allTakeaways.join(" ").toLowerCase();
+    for (const [theme, keywords] of Object.entries(themeKeywords)) {
+      if (keywords.some(k => combinedText.includes(k.toLowerCase()))) {
+        themes.push(theme);
+      }
+    }
+
+    // Compute ISW signal index based on findings
+    let signalIndex = Math.min(100, reports.length * 10 + themes.length * 5);
+    // Boost for critical themes
+    if (themes.includes("MILITARY_BUILDUP")) signalIndex = Math.min(100, signalIndex + 15);
+    if (themes.includes("NUCLEAR_TALKS")) signalIndex = Math.min(100, signalIndex + 10);
+    if (themes.includes("PROXY_ACTIVITY")) signalIndex = Math.min(100, signalIndex + 10);
+
+    const summary = `ISW/CTP: ${reports.length} reports analyzed (${reports.filter(r => r.source === "ISW").length} ISW, ${reports.filter(r => r.source === "CriticalThreats").length} CTP, ${gdeltItems.length} GDELT). Themes: ${themes.join(", ") || "none detected"}. ${allTakeaways[0]?.slice(0, 100) || "No key takeaways."}`;
+
+    await insertAgentReport(env.DB, {
+      agent_name: "isw",
+      report_type: "cycle",
+      data: {
+        reports,
+        themes,
+        iswSignalIndex: signalIndex,
+        reportCount: reports.length,
+        takeaways: allTakeaways.slice(0, 5),
+      },
+      summary,
+      threat_level: signalIndex,
+      confidence: reports.length >= 3 ? "HIGH" : reports.length >= 1 ? "MEDIUM" : "LOW",
+      items_count: reports.length,
+    });
+
+    return corsResponse({ success: true, reportsFound: reports.length, themes, signalIndex });
   } catch (e) {
     return corsError(e instanceof Error ? e.message : "Unknown");
   }

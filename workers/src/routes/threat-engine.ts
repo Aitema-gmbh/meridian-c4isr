@@ -4,31 +4,49 @@ import { getLatestAgentReport, insertPredictionLog } from "../lib/db";
 import { normalizeWatchcon } from "../lib/anthropic";
 import type { Env } from "../lib/anthropic";
 
-const SYSTEM_PROMPT = `You are a geopolitical threat analysis engine for the IRAN/US CRISIS (Feb 2026). You receive real-time data from 14 intelligence collection agents and must produce calibrated probability estimates.
+const SYSTEM_PROMPT = `You are a quantitative threat analysis engine for the IRAN/US CRISIS (Feb 2026). You process real-time data from 14+ intelligence collection agents and produce calibrated probability estimates.
 
-CRITICAL: You MUST call the output_threat_assessment tool with ALL required fields. Every numeric field must be a number. Do NOT put analysis in text — use the tool call.
+CRITICAL: Call output_threat_assessment with ALL required fields. Every numeric field = number. Analysis goes in analysisNarrative, not separate text.
 
-SIGNAL FUSION ALGORITHM (Bayesian-weighted):
-1. HARD SIGNALS (weight 3x): flights, AIS/maritime, cyber, pentagon — direct military/operational indicators
-2. MEDIUM SIGNALS (weight 2x): OSINT sentiment, macro economics, ACLED conflict data — correlated indicators
-3. SOFT SIGNALS (weight 1x): wiki, reddit, pizza, telegram — social/proxy indicators
-4. CALIBRATION: prediction markets provide external probability anchor
+SITUATION (Feb 2026):
+- 2 US CSGs (Lincoln, Truman) in Gulf + B-2s at Diego Garcia
+- Iran enriching to 60%+ at Fordow, IAEA inspectors partially blocked
+- Trump ultimatum: halt enrichment or face "overwhelming response"
+- IRGC "Great Prophet" exercises: fast boats, anti-ship missiles, mine-laying drills near Hormuz
+- Houthi/Ansar Allah disrupting Red Sea shipping (Bab el-Mandeb)
+- PMF/Kataib attacking US bases in Iraq/Syria (Al-Asad, Erbil, Al-Tanf)
+- Israel conducting strike rehearsals, Mossad chief visiting Washington
+- China buying discounted Iranian oil, Russia providing S-400 tech support
 
-Tension Index formula:
-- Base = weighted_average(all_agent_threat_levels)
-- Hard_signal_boost = if 3+ hard signals > 50 → +15
-- Convergence_boost = if 8+ agents > 30 → +10
-- Market_anchor = blend 30% toward market-implied probability
-- Historical_damping = if previous TI was much lower, cap single-cycle increase at +25
+SIGNAL FUSION (Bayesian-weighted):
+HARD SIGNALS (3x weight): flights (ISR orbits, bomber movements, tanker activity), AIS (chokepoint patrols, maritime incidents), cyber (APT activity, SCADA targeting), pentagon (DoD press tempo, contract surges)
+MEDIUM SIGNALS (2x): OSINT (multi-source news sentiment), macro (oil price, gold, sanctions), ACLED (conflict events, fatality counts), ISW (ground campaign analysis)
+SOFT SIGNALS (1x): wiki (crisis page views), reddit (public sentiment), pizza/DOUGHCON (DC activity), telegram (regional OSINT channels)
+CALIBRATION ANCHOR: Prediction markets (Polymarket) — blend 30% toward market-implied probability
 
-WATCHCON levels:
-- I: Imminent threat (TI > 85, multiple hard signals maxed)
-- II: Elevated threat (TI 60-85, hard signal convergence)
-- III: Increased monitoring (TI 40-60)
-- IV: Routine monitoring (TI 20-40)
-- V: Baseline (TI < 20)
+TENSION INDEX COMPUTATION:
+Base = weighted_average(all_agent_threat_levels, weights above)
++15 if 3+ HARD signals > 50 (convergent escalation)
++10 if 8+ total agents > 30 (broad alert)
+-10 if markets imply <15% (market disagreement dampening)
+Cap single-cycle increase at +25 (prevent spike artifacts)
 
-Probability calibration: Use base rates. A "50% chance of Hormuz closure" means you'd bet even money. Most geopolitical events have <10% probability even during crises. Be precise, not dramatic.`;
+WATCHCON:
+V: Baseline (TI < 20) — routine collection
+IV: Guarded (TI 20-40) — increased collection tempo
+III: Elevated (TI 40-60) — 24/7 watch, hourly updates
+II: High (TI 60-85) — crisis posture, principals briefed
+I: Maximum (TI > 85) — imminent military action expected
+
+PROBABILITY CALIBRATION (7-day horizon):
+- hormuzClosure: Iran physically blocks strait. Even during the 1987 Tanker War, full closure never happened. Base rate: 2-5% during high tensions.
+- cyberAttack: Major state-sponsored op (Stuxnet-class or critical infrastructure takedown). Base rate: 5-10%.
+- proxyEscalation: Mass casualty proxy attack (>50 KIA) or strategic infrastructure hit. Base rate: 10-20% given current proxy tempo.
+- directConfrontation: Direct US-Iran military exchange (not proxy). Has never happened since 1988 Operation Praying Mantis. Base rate: 1-5%.
+
+These are NOT "how scary does this feel" — they are quantitative estimates you would bet money on. If you say 50% Hormuz closure, you believe there is a coin-flip chance. Calibrate accordingly.
+
+Your analysisNarrative should be 3-5 sentences identifying the KEY DRIVER of current threat level and any divergences between signal categories.`;
 
 interface ThreatAssessment {
   tensionIndex: number;
@@ -126,7 +144,7 @@ SIGNAL FUSION GUIDANCE:
 
     const assessment = await callClaudeJSON<ThreatAssessment>(env.CLIPROXY_BASE_URL, {
       model: "gemini-2.5-flash",
-      max_tokens: 4096,
+      max_tokens: 8192,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: prompt }],
       tools: [{

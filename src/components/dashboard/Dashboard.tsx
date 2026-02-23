@@ -349,21 +349,20 @@ const Dashboard = () => {
   }, [loadFromDB, fetchLiveIntel, fetchMarkets]);
 
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <div className="min-h-screen md:h-screen md:max-h-screen flex flex-col bg-background overflow-y-auto md:overflow-hidden">
       {/* Top bar */}
-      <div className="flex items-center justify-between h-10 px-4 border-b border-panel-border bg-panel-header">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <svg viewBox="0 0 24 24" className="h-5 w-5 text-primary" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <div className="flex items-center justify-between h-auto md:h-10 px-2 md:px-4 py-1 md:py-0 border-b border-panel-border bg-panel-header flex-wrap gap-1">
+        <div className="flex items-center gap-2 md:gap-3">
+          <div className="flex items-center gap-1.5 md:gap-2">
+            <svg viewBox="0 0 24 24" className="h-4 w-4 md:h-5 md:w-5 text-primary" fill="none" stroke="currentColor" strokeWidth="1.5">
               <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
             </svg>
-            <span className="font-sans text-sm font-bold tracking-wider text-primary">MERIDIAN</span>
+            <span className="font-sans text-xs md:text-sm font-bold tracking-wider text-primary">MERIDIAN</span>
           </div>
-          <div className="h-4 w-px bg-panel-border" />
-          <span className="text-[10px] font-mono text-muted-foreground tracking-widest">C4ISR INTELLIGENCE PLATFORM</span>
+          <span className="hidden md:inline text-[10px] font-mono text-muted-foreground tracking-widest">C4ISR INTELLIGENCE PLATFORM</span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 md:gap-2 flex-wrap">
           {([
             { key: "map", label: "THREAT MATRIX", shortcut: "1" },
             { key: "agents", label: "AGENTS", shortcut: "2" },
@@ -374,7 +373,7 @@ const Dashboard = () => {
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`text-[10px] font-mono px-3 py-1 rounded-sm border transition-colors ${
+              className={`text-[8px] md:text-[10px] font-mono px-1.5 md:px-3 py-0.5 md:py-1 rounded-sm border transition-colors ${
                 activeTab === tab.key
                   ? "border-primary/50 text-primary bg-primary/10"
                   : "border-panel-border text-muted-foreground hover:text-foreground"
@@ -409,10 +408,10 @@ const Dashboard = () => {
       {/* Data ticker */}
       <DataTicker liveData={liveData} marketsData={marketsData} lastAnalyzed={lastAnalyzed} />
 
-      {/* Main content - 3 column layout */}
-      <div className="flex-1 grid grid-cols-12 gap-px bg-panel-border overflow-hidden">
-        {/* Left: Main view (50%) */}
-        <div className="col-span-6 bg-background">
+      {/* Main content - responsive layout: stacked on mobile, 3-col on desktop */}
+      <div className="md:flex-1 grid grid-cols-1 md:grid-cols-12 gap-px bg-panel-border md:overflow-hidden">
+        {/* Left: Main view (100% mobile / 50% desktop) */}
+        <div className="h-[70vh] md:h-auto md:min-h-0 col-span-1 md:col-span-6 bg-background">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
@@ -435,8 +434,8 @@ const Dashboard = () => {
           </AnimatePresence>
         </div>
 
-        {/* Center: Intel Feed (25%) */}
-        <div className="col-span-3 bg-background overflow-hidden">
+        {/* Center: Intel Feed (100% mobile / 25% desktop) */}
+        <div className="col-span-1 md:col-span-3 bg-background overflow-hidden h-[60vh] md:h-auto md:max-h-none">
           <IntelFeed
             items={liveData?.items || []}
             loading={intelLoading}
@@ -445,8 +444,8 @@ const Dashboard = () => {
           />
         </div>
 
-        {/* Right: Panels (25%) */}
-        <div className="col-span-3 flex flex-col bg-background overflow-hidden">
+        {/* Right: Panels (100% mobile / 25% desktop) */}
+        <div className="col-span-1 md:col-span-3 flex flex-col bg-background overflow-hidden h-[70vh] md:h-auto md:max-h-none">
           {/* Sub-tabs for right panel top section */}
           <div className="flex items-center border-b border-panel-border bg-panel-header shrink-0">
             <button

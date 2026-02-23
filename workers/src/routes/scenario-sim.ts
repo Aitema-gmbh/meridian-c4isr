@@ -112,7 +112,7 @@ INDICATORS: OSINT=${d("osint").sentimentScore ?? "?"}, Flights=${d("flights").an
 
     const analysis = await callClaudeJSON<ScenarioAnalysis>(env.CLIPROXY_BASE_URL, {
       model: "gemini-2.5-flash",
-      max_tokens: 4096,
+      max_tokens: 8192,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: prompt }],
       tools: [{

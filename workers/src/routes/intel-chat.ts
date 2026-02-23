@@ -42,7 +42,7 @@ export async function intelChat(req: Request, env: Env): Promise<Response> {
 
     const resp = await callClaude(env.CLIPROXY_BASE_URL, {
       model: "gemini-2.5-flash",
-      max_tokens: 4096,
+      max_tokens: 8192,
       system: systemContent,
       messages: messages.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
       stream: true,

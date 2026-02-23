@@ -1,11 +1,11 @@
 import { corsError, corsResponse } from "../lib/cors";
 import { callClaudeJSON } from "../lib/anthropic";
-import { getLatestAgentReport, insertAgentReport, insertThreatAssessment, insertCountryScores } from "../lib/db";
+import { getLatestAgentReport, getAgentHistory, getTensionHistory, insertAgentReport, insertThreatAssessment, insertCountryScores } from "../lib/db";
 import { normalizeWatchcon } from "../lib/anthropic";
 import type { Env } from "../lib/anthropic";
 import { aggregateSignals, aggregateMetricSignals, type AgentSignal } from "../lib/forecasting";
 
-const AGENT_NAMES = ["flights", "naval", "osint", "reddit", "pentagon", "cyber", "markets", "wiki", "macro", "fires", "pizza", "ais", "acled", "telegram"];
+const AGENT_NAMES = ["flights", "naval", "osint", "reddit", "pentagon", "cyber", "markets", "wiki", "macro", "fires", "pizza", "ais", "acled", "telegram", "metaculus", "weather", "isw"];
 
 const FOCUS_COUNTRIES = [
   { code: "IR", name: "Iran", keywords: ["iran", "iranian", "tehran", "irgc", "khamenei", "hormuz", "pezeshkian", "larijani", "fordow", "natanz"] },
@@ -36,22 +36,31 @@ interface HeadAnalystOutput {
 
 export async function agentHeadAnalyst(_req: Request, env: Env): Promise<Response> {
   try {
-    const cutoff = new Date(Date.now() - 90 * 60 * 1000).toISOString();
+    const recentCutoff = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(); // 3h for latest reports
+    const historyCutoff = 72; // 3 days of history
 
+    // Phase 0: Load current + historical data for each agent
     const agentReports: Record<string, { data: Record<string, unknown>; summary: string; threat_level: number }> = {};
-    for (const agent of AGENT_NAMES) {
-      const row = await getLatestAgentReport(env.DB, agent, cutoff);
-      if (row) agentReports[agent] = row as { data: Record<string, unknown>; summary: string; threat_level: number };
-    }
+    const agentHistories: Record<string, { summary: string; threat_level: number; items_count: number; created_at: string }[]> = {};
+
+    await Promise.all(AGENT_NAMES.map(async (agent) => {
+      const [latest, history] = await Promise.all([
+        getLatestAgentReport(env.DB, agent, recentCutoff),
+        getAgentHistory(env.DB, agent, historyCutoff),
+      ]);
+      if (latest) agentReports[agent] = latest as { data: Record<string, unknown>; summary: string; threat_level: number };
+      if (history.length) agentHistories[agent] = history;
+    }));
 
     const activeAgents = Object.keys(agentReports);
     if (activeAgents.length === 0) {
       return corsResponse({ success: false, reason: "No agent data" });
     }
 
-    const lastRow = await env.DB.prepare(
-      `SELECT tension_index, watchcon FROM threat_assessments ORDER BY created_at DESC LIMIT 1`
-    ).first<{ tension_index: number; watchcon: string }>();
+    // Load 3-day tension history for trend context
+    const tensionHistory = await getTensionHistory(env.DB, historyCutoff);
+
+    const lastRow = tensionHistory.length > 0 ? tensionHistory[0] : null;
 
     // Phase 1: Mathematical aggregation (Superforecasting / Geometric Mean of Odds)
     const now = Date.now();
@@ -68,34 +77,94 @@ export async function agentHeadAnalyst(_req: Request, env: Env): Promise<Respons
     const proxyMath = aggregateMetricSignals("proxyEscalation", agentSignals, 0.15);
     const directMath = aggregateMetricSignals("directConfrontation", agentSignals, 0.05);
 
-    // Phase 2: AI-powered contextual analysis (informed by math baseline)
-    // Get corroboration data for context
+    // Phase 2: Build rich 3-day context for AI analysis
+    // Get corroboration data
     const corrobRows = await env.DB.prepare(
       `SELECT agent_name, corroboration_score FROM agent_reports
        WHERE corroboration_score > 1 AND created_at >= ?
        ORDER BY created_at DESC LIMIT 20`
-    ).bind(cutoff).all<{ agent_name: string; corroboration_score: number }>();
+    ).bind(recentCutoff).all<{ agent_name: string; corroboration_score: number }>();
     const corrobMap: Record<string, number> = {};
     for (const r of corrobRows.results) {
       corrobMap[r.agent_name] = Math.max(corrobMap[r.agent_name] || 0, r.corroboration_score);
     }
 
+    // Build per-agent context with 3-day trend
     const contextParts = activeAgents.map((a) => {
       const corrob = corrobMap[a] ? ` [CORROBORATED: ${corrobMap[a]} sources]` : "";
-      return `${a.toUpperCase()}: ${agentReports[a].summary?.slice(0, 100)} | ${agentReports[a].threat_level}/100${corrob}`;
+      const history = agentHistories[a];
+      let trendLine = "";
+      if (history && history.length >= 3) {
+        // Show threat level progression over last 3 days
+        const levels = history.slice(0, 12).reverse().map(h => h.threat_level);
+        const avg = Math.round(levels.reduce((s, v) => s + v, 0) / levels.length);
+        const oldest = levels[0];
+        const newest = levels[levels.length - 1];
+        const delta = newest - oldest;
+        const arrow = delta > 5 ? "↑ RISING" : delta < -5 ? "↓ FALLING" : "→ STABLE";
+        trendLine = ` | 3D-TREND: ${arrow} (${oldest}→${newest}, avg=${avg}, ${levels.length} readings)`;
+      }
+      return `${a.toUpperCase()}: ${agentReports[a].summary?.slice(0, 120)} | CURRENT: ${agentReports[a].threat_level}/100${corrob}${trendLine}`;
     });
+
+    // Tension history summary
+    let tensionTrend = "";
+    if (tensionHistory.length >= 3) {
+      const recent = tensionHistory.slice(0, 6).map(t => `TI=${t.tension_index} WC=${t.watchcon}`);
+      const oldest = tensionHistory[tensionHistory.length - 1];
+      const newest = tensionHistory[0];
+      const delta = newest.tension_index - oldest.tension_index;
+      tensionTrend = `\n3-DAY TENSION TREND: ${delta > 0 ? "↑" : delta < 0 ? "↓" : "→"} (${oldest.tension_index}→${newest.tension_index} over ${tensionHistory.length} assessments). Recent: ${recent.join(" | ")}`;
+    }
+
     const trendContext = lastRow
       ? `\nPREV: TI=${lastRow.tension_index}, WC=${lastRow.watchcon}`
       : "";
     const mathContext = `\nMATH BASELINE (Geometric Mean of Odds, extremizing d=${mathAgg.extremizingFactor}): TI=${mathAgg.threatLevel}, Hormuz=${hormuzMath.threatLevel}%, Cyber=${cyberMath.threatLevel}%, Proxy=${proxyMath.threatLevel}%, Direct=${directMath.threatLevel}%, Confidence=${mathAgg.confidence}, Convergence=${mathAgg.convergenceScore}`;
 
     const assessment = await callClaudeJSON<HeadAnalystOutput>(env.CLIPROXY_BASE_URL, {
-      model: "gemini-2.5-flash",
-      max_tokens: 4096,
-      system: `You are the HEAD ANALYST of an intelligence fusion center monitoring the IRAN/US CRISIS (Feb 2026). 2 US CSGs in Gulf. Trump ultimatum. B-2s at Diego Garcia. You receive a MATHEMATICAL BASELINE from Superforecasting aggregation (Geometric Mean of Odds with Neyman-Roughgarden extremizing). Use this as your starting point but adjust based on contextual analysis. Your final numbers should stay within ±15 of the math baseline unless you have strong qualitative reasons. CRITICAL: Call output_head_analyst_assessment with ALL fields. Every number 0-100. watchcon = Roman numeral I-V.`,
+      model: "gemini-3.1-pro-high",
+      max_tokens: 8192,
+      system: `You are the HEAD ANALYST at a C4ISR intelligence fusion center monitoring the IRAN/US CRISIS (February 2026).
+
+SITUATION BRIEFING:
+- 2 US Carrier Strike Groups (Lincoln, Truman) deployed to Persian Gulf
+- B-2 Spirit bombers staged at Diego Garcia with bunker-buster ordnance
+- Trump has issued public ultimatum: Iran must halt enrichment or face "overwhelming response"
+- Iran enriching to 60%+ at Fordow (underground facility, hardened target)
+- IRGC conducting "Great Prophet" naval exercises near Strait of Hormuz
+- Houthi attacks on Red Sea shipping continue (Bab el-Mandeb disrupted)
+- Iraq/Syria PMF/Kataib Hezbollah attacks on US bases (Al-Asad, Erbil)
+- Israel conducting preparatory exercises for potential strike on Iranian nuclear facilities
+- Oil prices elevated ($90+ Brent), Gulf states hedging diplomatically
+
+YOUR ROLE: Synthesize 14 collection agents into ONE coherent threat picture.
+
+METHODOLOGY:
+1. You receive a MATHEMATICAL BASELINE from Superforecasting aggregation (Geometric Mean of Odds with extremizing). This is your ANCHOR — stay within ±15 unless strong qualitative reasons exist.
+2. You receive 3-DAY TREND DATA per agent — watch for CONVERGENT ESCALATION (multiple agents rising simultaneously).
+3. Weight HARD SIGNALS (flights, AIS, cyber, pentagon) 3x over SOFT SIGNALS (wiki, reddit, pizza).
+4. Your flashReport is the FIRST THING senior decision-makers read — make it count. Be specific: name actors, locations, timeframes.
+
+PROBABILITY CALIBRATION:
+- hormuzClosure: What's the probability Iran physically blocks the strait in next 7 days? Base rate: <5% even during crises.
+- cyberAttack: Major state-sponsored cyber operation targeting critical infrastructure? Base rate: ~10% during active tensions.
+- proxyEscalation: Significant proxy attack (50+ casualties or major infrastructure hit)? Base rate: ~15% given current tempo.
+- directConfrontation: Direct US-Iran military exchange? Base rate: <3% even at WATCHCON II.
+
+Be precise, not dramatic. A flashReport that says "tensions remain elevated" is useless. Instead: "IRGC IRIN deployed 3 additional fast-attack craft to Bandar Abbas. Combined with 2 P-8A sorties over Hormuz and CENTCOM's recall of USS Bataan ARG, this suggests preparation for maritime interdiction scenario within 48-72h."
+
+WATCHCON SCALE (same as DEFCON — lower number = HIGHER threat):
+- WATCHCON I = MAXIMUM threat (TI > 85) — imminent conflict
+- WATCHCON II = HIGH threat (TI 60-85) — crisis posture
+- WATCHCON III = ELEVATED (TI 40-60) — increased monitoring
+- WATCHCON IV = GUARDED (TI 20-40) — routine enhanced
+- WATCHCON V = NORMAL (TI < 20) — baseline
+
+CRITICAL: Call output_head_analyst_assessment with ALL fields. Every number 0-100. watchcon = Roman numeral I-V (I=highest threat, V=lowest).`,
       messages: [{
         role: "user",
-        content: `AGENTS:\n${contextParts.join("\n")}${trendContext}${mathContext}\n\nSynthesize threat assessment. Use math baseline as anchor, adjust with context.`,
+        content: `AGENTS (with 3-day trends):\n${contextParts.join("\n")}${trendContext}${tensionTrend}${mathContext}\n\nSynthesize threat assessment. Use math baseline as anchor, adjust with context and 3-day trends.`,
       }],
       tools: [{
         name: "output_head_analyst_assessment",
@@ -119,9 +188,17 @@ export async function agentHeadAnalyst(_req: Request, env: Env): Promise<Respons
     });
 
     // Sanitize — Gemini may return undefined/null for some fields
+    // Also correct WATCHCON if model misinterprets scale (V=lowest, I=highest)
+    const ti = Number(assessment.tensionIndex) || 0;
+    let wc = normalizeWatchcon(assessment.watchcon);
+    // Auto-correct WATCHCON based on TI if model clearly got scale backwards
+    if (ti > 85 && wc === "V") wc = "I";
+    else if (ti > 60 && (wc === "V" || wc === "IV")) wc = "II";
+    else if (ti > 40 && wc === "V") wc = "III";
+    else if (ti < 20 && wc === "I") wc = "V";
     const safe = {
-      tensionIndex: Number(assessment.tensionIndex) || 0,
-      watchcon: normalizeWatchcon(assessment.watchcon),
+      tensionIndex: ti,
+      watchcon: wc,
       hormuzClosure: Number(assessment.hormuzClosure) || 0,
       cyberAttack: Number(assessment.cyberAttack) || 0,
       proxyEscalation: Number(assessment.proxyEscalation) || 0,

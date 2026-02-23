@@ -27,6 +27,10 @@ dist-ssr
 .env
 .env.*
 !.env.example
+.dev.vars
+
+# Wrangler
+.wrangler/
 
 # Claude
 .claude/
